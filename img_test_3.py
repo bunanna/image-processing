@@ -10,11 +10,11 @@ import matplotlib as mpl
 import pytesseract
 import os
 import datetime
+from dateutil.relativedelta import relativedelta
 from collections import Counter
 from PIL import Image, ImageFilter, ImageEnhance
-from skimage import io
 mpl.rcParams['figure.dpi'] = 300
-#current_img = 'day.png'
+mpl.rcParams.update({'font.size': 5})
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
 '''
@@ -30,7 +30,7 @@ def remove_alpha_channel(img):
 
 def get_top_colors(img):
     index = 0
-    color_count = 3
+    color_count = 10
     process_list = []
     color_list = []
     channels = list(img.getbands())
@@ -186,21 +186,6 @@ def crop_axes(folder_name, img):
     bottom_y_axis = 0
 
     '''
-    first_space = False
-    date_list = []
-    ix_name_list = []
-    for char in folder_name:
-        if char == ' ' and first_space == False:
-            first_space = True
-        elif first_space == False:
-            date_list.append(char)
-        elif first_space == True:
-            ix_name_list.append(char)
-            
-    date = ''.join(date_list)
-    ix_name = ''.join(ix_name_list)
-    '''
-    '''
     group 1 (blue):
     dimensions: 500x135
     '''
@@ -210,12 +195,17 @@ def crop_axes(folder_name, img):
         'BCIX', 
         'CIX', 
         'IIX-Bali', 
-        'IIX-Jogja', 
+        'IIX-Jogja',
+        'IXPN Lagos',
         'LyonIX', 
         'MASS-IX', 
         'MUS-IX', 
         'RIX', 
         'SAIX'
+    ]
+    
+    group_2 = [
+        'LONAP'
     ]
     
     if folder_name in group_1:
@@ -230,6 +220,19 @@ def crop_axes(folder_name, img):
         bottom_y_axis = 132
         
         scale_factor = 3
+        
+    elif folder_name in group_2:
+        left_x_axis = 75
+        top_x_axis = 168
+        right_x_axis = img.width - 1
+        bottom_x_axis = 182
+        
+        left_y_axis = 25
+        top_y_axis = 0
+        right_y_axis = 75
+        bottom_y_axis = 132
+        
+        scale_factor = 6
         
     x_axis_box = tuple([left_x_axis, top_x_axis, right_x_axis, bottom_x_axis])    
     y_axis_box = tuple([left_y_axis, top_y_axis, right_y_axis, bottom_y_axis])
@@ -252,6 +255,7 @@ def ident_chars(img, scale_factor, axis):
     img_2 = img_1.resize((img_1.size[0]*scale_factor, img_1.size[1]*scale_factor))
     img_3 = img_2.point(fn, mode='1')
     img_4 = img_3.filter(ImageFilter.ModeFilter(3))
+    #img_5 = img_4.filter(ImageFilter.MaxFilter(3))
     enhanced_img = img_4.filter(ImageFilter.DETAIL)
     
     '''
@@ -268,6 +272,7 @@ def ident_chars(img, scale_factor, axis):
         
     box = pytesseract.image_to_boxes(enhanced_img, lang='eng', config='--psm 6 --oem 3').splitlines()
     text[:] = (string for string in text if string != '')
+    text[:] = (string for string in text if string != '|')
     
     '''
     text_num = pytesseract.image_to_string(enhanced_img, lang='eng', config='digits --psm 6 --oem 3').splitlines()
@@ -289,12 +294,12 @@ def process_chars(str_list, box_list):
     for string in str_list:
         for char in string:
             if char != ' ':
-
                 current_string_chars.append(char)
                 current_box.append(box_list[index])
                 index += 1
-        
+
         new_str = ''.join(current_string_chars)
+
         if new_str == 'Week':
             continue
         elif new_str in word_box_dict:
@@ -312,8 +317,6 @@ def process_chars(str_list, box_list):
 
 def map_boxes(word_box_dict, scale, height, shift_right, shift_down, axis):
     words = list(word_box_dict.keys())
-    boxes_per_string = []
-    box_dict = {}
     char_box_dict = {}
     
     for word in words:
@@ -351,6 +354,10 @@ def map_boxes(word_box_dict, scale, height, shift_right, shift_down, axis):
         vert_midline = (left_border + right_border) // 2
         
         if axis == 'y':
+            length = len(number_chars)
+            if number_chars[length - 1] == '6' and number_chars[length - 2] == '0':
+                number_chars = number_chars[:(length - 1)]
+                
             if '.' in number_chars:
                 number = float(''.join(number_chars))
             else:
@@ -403,8 +410,34 @@ def map_y_values(color_dict, y_axis_dict):
         
     return y_scaled_color_dict
 
-def map_x_values_day(y_units_dict, x_axis_dict, current_date):
+def scale_by_color(y_units_dict, start_loc, end_loc, time_factor, start_date):
     x_y_dict = {}
+    
+    for color in y_units_dict:
+        x_values_unscaled = y_units_dict[color]['x values']
+        y_values_scaled = y_units_dict[color]['scaled y values']
+        y_values_kept = []
+        date_list = []
+        index = 0
+        
+        for val in x_values_unscaled:
+            
+            new_val = int(((val - start_loc) / (end_loc - start_loc)) * time_factor)
+            raw_date = start_date + datetime.timedelta(seconds = new_val)
+            y_values_kept.append(y_values_scaled[index])
+            date_list.append(raw_date)
+
+            index += 1
+            
+        x_y_dict[color] = {
+            'y values' : y_values_kept,
+            'unit' : y_units_dict[color]['unit'],
+            'raw dates' : date_list
+        }
+            
+    return x_y_dict
+
+def map_x_values_day(y_units_dict, x_axis_dict, current_date):
     key_list = list(x_axis_dict.keys())
     key_amount = len(key_list)
     label_list = []
@@ -419,7 +452,6 @@ def map_x_values_day(y_units_dict, x_axis_dict, current_date):
     hour = 0
 
     for key in x_axis_dict:
-        
         if ':' in key:
             cut_index = key.index(':')
             current_key = key[:cut_index]
@@ -455,151 +487,241 @@ def map_x_values_day(y_units_dict, x_axis_dict, current_date):
         start_location = first_zero
         end_location = second_zero
         hour = 24
-
-    for color in y_units_dict:
-        x_values_unscaled = y_units_dict[color]['x values']
-        y_values_scaled = y_units_dict[color]['scaled y values']
-        y_values_kept = []
-        x_values_scaled = []
-        x_scaled_string = []
-        date_list = []
-        index = 0
-        
-        for val in x_values_unscaled:
-            
-            if val >= start_location and val < end_location:
-                new_val = int(((val - start_location) / (end_location - start_location)) * hour * 60 * 60)
-                raw_date = current_date + datetime.timedelta(seconds = new_val)
-                val_string = str(raw_date)
-                x_values_scaled.append(new_val)
-                x_scaled_string.append(val_string)
-                y_values_kept.append(y_values_scaled[index])
-                date_list.append(raw_date)
-
-            index += 1
-            
-        x_y_dict[color] = {
-            'y values' : y_values_kept,
-            'unit' : y_units_dict[color]['unit'],
-            'x in seconds' : x_values_scaled,
-            'x in hours' : x_scaled_string,
-            'raw dates' : date_list
-        }
-            
-    return x_y_dict
+    
+    return scale_by_color(y_units_dict, start_location, end_location, hour * 60 * 60, current_date)
 
 def map_x_values_week(y_units_dict, x_axis_dict, current_date):
-    x_y_dict = {}
     key_list = list(x_axis_dict.keys())
     key_amount = len(key_list)
-    end_time = datetime.datetime.combine(current_date, datetime.time(12, 0))
-    start_time = end_time - datetime.timedelta(days = 7)
+    
+    if 'on' in key_list[key_amount - 1]:
+        weekday = 1
+    elif 'ue' in key_list[key_amount - 1]:
+        weekday = 2
+    elif 'ed' in key_list[key_amount - 1]:
+        weekday = 3
+    elif 'hu' in key_list[key_amount - 1]:
+        weekday = 4
+    elif 'ri' in key_list[key_amount - 1]:
+        weekday = 5
+    elif 'at' in key_list[key_amount - 1]:
+        weekday = 6
+    elif 'un' in key_list[key_amount - 1]:
+        weekday = 7
+        
+    if weekday == current_date.isoweekday():
+        end_time = datetime.datetime.combine(current_date, datetime.time(12, 0))
+    elif weekday < current_date.isoweekday():
+        end_time = datetime.datetime.combine(current_date, datetime.time(12, 0)) - datetime.timedelta(days = current_date.isoweekday() - weekday)
+    elif weekday > current_date.isoweekday():
+        end_time = datetime.datetime.combine(current_date, datetime.time(12, 0)) - datetime.timedelta(days = weekday - current_date.isoweekday())
+    
+    end_time += datetime.timedelta(days = 1)
+    start_time = end_time - datetime.timedelta(days = key_amount)
     start_location = x_axis_dict[key_list[0]]['vertical midline']
     end_location = x_axis_dict[key_list[key_amount - 1]]['vertical midline']
-    
-    for color in y_units_dict:
-        x_values_unscaled = y_units_dict[color]['x values']
-        y_values_scaled = y_units_dict[color]['scaled y values']
-        y_values_kept = []
-        x_values_scaled = []
-        x_scaled_string = []
-        date_list = []
-        index = 0
         
-        for val in x_values_unscaled:
-            
-            if val >= start_location and val < end_location:
-                new_val = int(((val - start_location) / (end_location - start_location)) * 7 * 24 * 60 * 60)
-                raw_date = start_time + datetime.timedelta(seconds = new_val)
-                val_string = str(raw_date)
-                x_values_scaled.append(new_val)
-                x_scaled_string.append(val_string)
-                y_values_kept.append(y_values_scaled[index])
-                date_list.append(raw_date)
-
-            index += 1
-            
-        x_y_dict[color] = {
-            'y values' : y_values_kept,
-            'unit' : y_units_dict[color]['unit'],
-            'x in seconds' : x_values_scaled,
-            'x in days' : x_scaled_string,
-            'raw dates' : date_list
-        }
-        
-    return x_y_dict
+    return scale_by_color(y_units_dict, start_location, end_location, (key_amount - 1) * 24 * 60 * 60, start_time)
 
 def map_x_values_month(y_units_dict, x_axis_dict, current_date):
-    x_y_dict = {}
+    end_week_number_string_list = []
+    start_week_number_string_list = []
+    first_tag = 1
+    key_list = list(x_axis_dict.keys())
+    key_amount = len(key_list) 
+    week_number = current_date.isocalendar()[1]
+
+    if str(week_number) in key_list[key_amount - 1]:
+        if current_date.isoweekday() >= 4:
+            end_time = datetime.datetime.combine(current_date, datetime.time(0, 0)) - datetime.timedelta(days = (current_date.isoweekday() - 4))
+    else:
+        for char in key_list[key_amount - 1]:
+            if char.isdigit() == True:
+                end_week_number_string_list.append(char)
+        
+        end_week_number_label = ''.join(end_week_number_string_list)
+        end_time = datetime.datetime.combine(current_date, datetime.time(0, 0)) - datetime.timedelta(weeks = week_number - int(end_week_number_label))
+        
+        if end_time.isoweekday() > 4:
+            end_time -= datetime.timedelta(days = (end_time.isoweekday() - 4))
+        elif end_time.isoweekday() < 4:
+            end_time += datetime.timedelta(days = (4 - end_time.isoweekday()))
+            
+    while 'Week' not in key_list[first_tag]:
+        first_tag += 1
+        
+    for char in key_list[first_tag]:
+        if char.isdigit() == True:
+            start_week_number_string_list.append(char)
     
-    
-    return x_y_dict
+    start_week_number_label = ''.join(start_week_number_string_list)
+    start_time = end_time - datetime.timedelta(weeks = end_time.isocalendar()[1] - int(start_week_number_label))
+    start_location = x_axis_dict[key_list[first_tag]]['vertical midline']
+    end_location = x_axis_dict[key_list[key_amount - 1]]['vertical midline']
+     
+    return scale_by_color(y_units_dict, start_location, end_location, (end_time.isocalendar()[1] - int(start_week_number_label)) * 7 * 24 * 60 * 60, start_time)
 
 def map_x_values_year(y_units_dict, x_axis_dict, current_date):
-    x_y_dict = {}
+    key_list = list(x_axis_dict.keys())
+    key_amount = len(key_list)
     
+    if 'an' in key_list[key_amount - 2]:
+        month_num = 1
+    elif 'eb' in key_list[key_amount - 2]:
+        month_num = 2
+    elif 'ar' in key_list[key_amount - 2]:
+        month_num = 3
+    elif 'pr' in key_list[key_amount - 2]:
+        month_num = 4
+    elif 'ay' in key_list[key_amount - 2]:
+        month_num = 5
+    elif 'un' in key_list[key_amount - 2]:
+        month_num = 6
+    elif 'ul' in key_list[key_amount - 2]:
+        month_num = 7
+    elif 'ug' in key_list[key_amount - 2]:
+        month_num = 8
+    elif 'ep' in key_list[key_amount - 2]:
+        month_num = 9
+    elif 'ct' in key_list[key_amount - 2]:
+        month_num = 10
+    elif 'ov' in key_list[key_amount - 2]:
+        month_num = 11
+    elif 'ec' in key_list[key_amount - 2]:
+        month_num = 12
     
-    return x_y_dict
-         
+    if month_num == 12:
+        end_time = datetime.datetime(current_date.year - 1, month_num, 15, 0, 0)
+    else:
+        end_time = datetime.datetime(current_date.year, month_num, 15, 0, 0)
+    
+    start_time = end_time - relativedelta(months = key_amount - 2)
+    start_location = x_axis_dict[key_list[0]]['vertical midline']
+    end_location = x_axis_dict[key_list[key_amount - 2]]['vertical midline']
+    change = end_time - start_time
+    
+    return scale_by_color(y_units_dict, start_location, end_location, change.days * 24 * 60 * 60, start_time) 
+  
 if __name__ == "__main__":
     
-    directory = r'C:\Users\brian\OneDrive\Desktop\Programming Projects\Python\COVID Internet Project\Image Processing'
+    directory = r'C:\Users\brian\OneDrive\Desktop\Programming Projects\Python\COVID Internet Project\Image Processing\August Images'
+    all_dict = {}
     start_year = 2020
-    start_month = 7
-    start_day = 30
-    test_ixp = 'BCIX'
-    start_date = datetime.date(start_year, start_month, start_day)
-    start_date_time = datetime.datetime(start_year, start_month, start_day)
-    date_directory = os.path.join(directory, str(start_date))
-    ixp_directory = os.path.join(date_directory, str(start_date) + ' ' + test_ixp)
+    start_month = 8
+    start_day = 1
+    ixp_list = ['LONAP']
     
-    for filename in os.listdir(ixp_directory):
-        graph_type = ''
+    for date_file in directory:
+
+        start_date = datetime.date(start_year, start_month, start_day)
+        start_date_time = datetime.datetime(start_year, start_month, start_day)
+        date_directory = os.path.join(directory, str(start_date))
         
-        if 'day' in filename:
-            graph_type = 'day'
-        elif 'week' in filename:
-            graph_type = 'week'
-        elif 'month' in filename:
-            graph_type = 'month'
-        elif 'year' in filename:
-            graph_type = 'year'
+        for test_ixp in ixp_list:
+            ixp_directory = os.path.join(date_directory, str(start_date) + ' ' + test_ixp)
             
-        if graph_type == 'week':
-            current_img = Image.open(os.path.join(ixp_directory, filename))
+            if test_ixp not in all_dict:
+                all_dict[test_ixp] = {}
+                all_dict[test_ixp][str(start_date)] = {}
+                
+            for filename in os.listdir(ixp_directory):
+                graph_type = ''
+                
+                day_plot = False
+                week_plot = False
+                month_plot = False
+                year_plot = False
+                
+                if 'day' in filename:
+                    day_plot = True
+                elif 'week' in filename:
+                    week_plot = True
+                elif 'month' in filename:
+                    month_plot = True
+                elif 'year' in filename:
+                    year_plot = True
+                    
+                if day_plot == True or week_plot == True or month_plot == True or year_plot == True:
+                    current_img = Image.open(os.path.join(ixp_directory, filename))
+                    colors = process_heights(current_img, False)
+                    axes = crop_axes(test_ixp, current_img)
+                    
+                    x_axis = axes[0]
+                    y_axis = axes[1]
+                    scale_factor = axes[4]
+                    
+                    left_x_axis = axes[2][0]
+                    top_x_axis = axes[2][1]
+                    right_x_axis = axes[2][2]
+                    bottom_x_axis = axes[2][3]
+                    
+                    left_y_axis = axes[3][0]
+                    top_y_axis = axes[3][1]
+                    right_y_axis = axes[3][2]
+                    bottom_y_axis = axes[3][3]
+                    
+                    x_axis_chars = ident_chars(x_axis, scale_factor, 'x')
+                    y_axis_chars = ident_chars(y_axis, scale_factor, 'y')
+                    
+                    x_chars = process_chars(x_axis_chars[0], x_axis_chars[1])
+                    y_chars = process_chars(y_axis_chars[0], y_axis_chars[1])
+                    
+                    scaled_x = map_boxes(x_chars, scale_factor, x_axis_chars[3], left_x_axis, top_x_axis, 'x')
+                    scaled_y = map_boxes(y_chars, scale_factor, y_axis_chars[3], left_y_axis, top_y_axis, 'y')
+
+                    scaled_y_vals = map_y_values(colors, scaled_y)
+                    
+                    if day_plot == True:
+                        day_scaled_x_vals = map_x_values_day(scaled_y_vals, scaled_x, start_date_time)
+                    elif week_plot == True:
+                        week_scaled_x_vals = map_x_values_week(scaled_y_vals, scaled_x, start_date_time)
+                    elif month_plot == True:
+                        month_scaled_x_vals = map_x_values_month(scaled_y_vals, scaled_x, start_date_time)
+                    elif year_plot == True:
+                        year_scaled_x_vals = map_x_values_year(scaled_y_vals, scaled_x, start_date_time)
             
-            colors = process_heights(current_img, False)
+            if day_plot == True:
+                fig,axes = plt.subplots(figsize=(15,5))
+                plt.plot(day_scaled_x_vals[(84, 190, 239)]['raw dates'], day_scaled_x_vals[(84, 190, 239)]['y values'], linewidth = 1)
+                plt.ylabel('Incoming traffic in ' + day_scaled_x_vals[(84, 190, 239)]['unit'] + 'bits per second')
+                plt.tight_layout()
+                plt.savefig(str(start_date) + ' ' + test_ixp + ' ' + 'day' + '.pdf')
+                plt.cla()
+                plt.close()
+                all_dict[test_ixp][str(start_date)]['day'] = day_scaled_x_vals[(84, 190, 239)]
             
-            axes = crop_axes(test_ixp, current_img)
-            x_axis = axes[0]
-            y_axis = axes[1]
-            scale_factor = axes[4]
+            if week_plot == True:
+                fig,axes = plt.subplots(figsize=(15,5))
+                plt.plot(week_scaled_x_vals[(84, 190, 239)]['raw dates'], week_scaled_x_vals[(84, 190, 239)]['y values'], linewidth = 1)
+                plt.ylabel('Incoming traffic in ' + week_scaled_x_vals[(84, 190, 239)]['unit'] + 'bits per second')
+                plt.tight_layout()
+                plt.savefig(str(start_date) + ' ' + test_ixp + ' ' + 'week' + '.pdf')
+                plt.cla()
+                plt.close()
+                all_dict[test_ixp][str(start_date)]['week'] = week_scaled_x_vals[(84, 190, 239)]
             
-            left_x_axis = axes[2][0]
-            top_x_axis = axes[2][1]
-            right_x_axis = axes[2][2]
-            bottom_x_axis = axes[2][3]
+            if month_plot == True:
+                fig,axes = plt.subplots(figsize=(15,5))
+                plt.plot(month_scaled_x_vals[(84, 190, 239)]['raw dates'], month_scaled_x_vals[(84, 190, 239)]['y values'], linewidth = 1)
+                plt.ylabel('Incoming traffic in ' + month_scaled_x_vals[(84, 190, 239)]['unit'] + 'bits per second')
+                plt.tight_layout()
+                plt.savefig(str(start_date) + ' ' + test_ixp + ' ' + 'month' + '.pdf')
+                plt.cla()
+                plt.close()
+                all_dict[test_ixp][str(start_date)]['month'] = month_scaled_x_vals[(84, 190, 239)]
             
-            left_y_axis = axes[3][0]
-            top_y_axis = axes[3][1]
-            right_y_axis = axes[3][2]
-            bottom_y_axis = axes[3][3]
-            
-            x_axis_chars = ident_chars(x_axis, scale_factor, 'x')
-            y_axis_chars = ident_chars(y_axis, scale_factor, 'y')
-            
-            x_chars = process_chars(x_axis_chars[0], x_axis_chars[1])
-            y_chars = process_chars(y_axis_chars[0], y_axis_chars[1])
-            
-            scaled_x = map_boxes(x_chars, scale_factor, x_axis_chars[3], left_x_axis, top_x_axis, 'x')
-            scaled_y = map_boxes(y_chars, scale_factor, y_axis_chars[3], left_y_axis, top_y_axis, 'y')
-            
-            scaled_y_vals = map_y_values(colors, scaled_y)
-            
-            if graph_type == 'day':
-                scaled_x_vals = map_x_values_day(scaled_y_vals, scaled_x, start_date_time)
-            elif graph_type == 'week':
-                scaled_x_vals = map_x_values_week(scaled_y_vals, scaled_x, start_date_time)
-            
-            x_axis_chars[2].show()
-            #y_axis_chars[2].show()
+            if year_plot == True:
+                fig,axes = plt.subplots(figsize=(15,5))
+                plt.plot(year_scaled_x_vals[(84, 190, 239)]['raw dates'], year_scaled_x_vals[(84, 190, 239)]['y values'], linewidth = 1)
+                plt.ylabel('Incoming traffic in ' + year_scaled_x_vals[(84, 190, 239)]['unit'] + 'bits per second')
+                plt.tight_layout()
+                plt.savefig(str(start_date) + ' ' + test_ixp + ' ' + 'year' + '.pdf')
+                plt.cla()
+                plt.close()
+                all_dict[test_ixp][str(start_date)]['month'] = month_scaled_x_vals[(84, 190, 239)]
+             
+        start_day += 1
+        if start_day == 12 or start_day == 28:
+            start_day += 1
+        elif start_day == 32:
+            break
