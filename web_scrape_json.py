@@ -11,7 +11,25 @@ import os
 from tqdm import tqdm
 from bs4 import BeautifulSoup as bs
 from urllib.parse import urljoin, urlparse
-    
+import smtplib
+
+sender = 'scriptnotice@gmail.com'
+recip = 'bmb2193@columbia.edu'
+
+try:
+    print('connecting')
+    s = smtplib.SMTP('smtp.gmail.com', 587)
+    print('connected!')
+    s.ehlo()
+    s.starttls()
+    s.ehlo()
+    s.login("scriptnotice@gmail.com", '#####')
+    text = "Scraping has started for " + str(datetime.date.today())
+    s.sendmail(sender, recip, text)
+except:
+    print("Error in sending commencement email.")
+    quit()
+
 def is_valid(url):
     """
     Checks whether `url` is a valid URL.
@@ -59,14 +77,16 @@ def download(url, pathname):
     # get the file name
     filename = os.path.join(pathname, url.split("/")[-1])
 
-    # progress bar, changing the unit to bytes instead of iteration (default by tqdm)
-    progress = tqdm(response.iter_content(1024), f"Downloading {filename}", total=file_size, unit="B", unit_scale=True, unit_divisor=1024)
+    #progress bar, changing the unit to bytes instead of iteration (default by tqdm)
+    progress = tqdm(response.iter_content(1024), "Downloading " + filename, total=file_size, unit="B", unit_scale=True, unit_divisor=1024)
+    
     with open(filename, "wb") as f:
         for data in progress:
             # write data read to the file
             f.write(data)
             # update the progress bar manually
             progress.update(len(data))
+    
 
 def main(url, path):
     # get all images
@@ -85,7 +105,7 @@ if __name__ == "__main__":
     x = datetime.datetime.now()
     
     ixp_whitelist = [
-        'angonix', 
+        'angonix',
         'ANIX - Albanian Neutral Internet eXchange', 
         'ArmIX', 
         'BALT-IX', 
@@ -205,4 +225,15 @@ if __name__ == "__main__":
             
     print("Scraping completed.")
         
-        
+try:
+    print('connecting')
+    s = smtplib.SMTP('smtp.gmail.com', 587)
+    print('connected!')
+    s.ehlo()
+    s.starttls()
+    s.ehlo()
+    s.login("scriptnotice@gmail.com", '#####')
+    text = "Scraping has ended for " + str(datetime.date.today())
+    s.sendmail(sender, recip, text)
+except:
+    print("Error in sending conclusion email.")
