@@ -10,10 +10,15 @@ import matplotlib as mpl
 import pytesseract
 import os
 import datetime
+import pandas as pd
+import ruptures as rpt
+
 from dateutil.relativedelta import relativedelta
 from collections import Counter
 from PIL import Image, ImageFilter, ImageEnhance
-import ruptures as rpt
+from tslib.src import tsUtils
+from tslib.src.synthcontrol.syntheticControl import RobustSyntheticControl
+from tslib.tests import testdata
 
 mpl.rcParams['figure.dpi'] = 300
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
@@ -1308,7 +1313,6 @@ def map_x_values_year(y_units_dict, x_axis_dict, current_date, multi_year, ixp, 
     '''
     key_list = list(x_axis_dict.keys())
     key_amount = len(key_list)
-    print(key_list)
     
     if multi_year == True:
         last_year = int(key_list[key_amount - 1])
@@ -1398,7 +1402,7 @@ def map_x_values_year(y_units_dict, x_axis_dict, current_date, multi_year, ixp, 
     
     return scale_by_color(y_units_dict, start_location, end_location, change.days * 24 * 60 * 60, start_time) 
 
-def find_peak_ranges(processed_x_values, processed_y_values):
+def find_peak_ranges(processed_x_values, processed_y_values, ixp):
     '''
     Uses ruptures to find breakpoints (areas where the series of data changes
     suddenly) and highlight regions of interest.
@@ -1413,6 +1417,7 @@ def find_peak_ranges(processed_x_values, processed_y_values):
     date_numpy = np.array(processed_x_values)
     throughput_numpy = np.array(processed_y_values)
     maximum = np.max(throughput_numpy)
+    
     print("Maximum value of throughput is: " + str(maximum))
     algo = rpt.Pelt(model='rbf').fit(throughput_numpy)
     result = algo.predict(pen=5)
@@ -1433,10 +1438,23 @@ def find_peak_ranges(processed_x_values, processed_y_values):
             january_index = count
             break
         count += 1;
-
-    before_january = throughput_numpy[0:january_index]
+    
+    before_stretch = 1
+    after_stretch = 1
+        
+    before_january_old = throughput_numpy[0:january_index]
+    before_january_date = date_numpy[0:january_index]
+    before_january = np.repeat(before_january_old,before_stretch, axis=0)
+    
+    after_january_old = throughput_numpy[january_index:]
+    after_january_date = date_numpy[january_index:]
+    after_january = np.repeat(after_january_old,after_stretch, axis=0) 
+    
     last_year_mean = np.mean(before_january)
     last_year_std = np.std(before_january)
+    
+    df_before_january = pd.DataFrame({ixp: before_january})
+    df_after_january = pd.DataFrame({ixp: after_january})
     
     while end_index_in_result < breakpoint_amt:
         start_index = result[start_index_in_result]
@@ -1455,8 +1473,29 @@ def find_peak_ranges(processed_x_values, processed_y_values):
     tuples = zip(*sorted_list)
     
     avg, indices = [list(tuple) for tuple in tuples]
-    return indices[len(indices)-3:len(indices)], last_year_mean, last_year_std, maximum
+    
+    return indices[len(indices)-3:len(indices)], last_year_mean, last_year_std, maximum, df_before_january, df_after_january, after_january_date, before_january_date, before_january_old, after_january_old
 
+def synthetic_control(before_january_data, after_january_data, after_january_dates, before_january_dates, selected_ixp, other_ixps):
+    singvals = 4
+    trainDF = pd.DataFrame(data=before_january_data)
+    testDF = pd.DataFrame(data=after_january_data[other_ixps])
+    rscModel = RobustSyntheticControl(selected_ixp, singvals, len(trainDF), probObservation=1.0, modelType='svd', svdMethod='numpy', otherSeriesKeysArray=other_ixps)
+    rscModel.fit(trainDF)
+    denoisedDF = rscModel.model.denoisedDF()
+    print(rscModel.model.weights)
+    
+    predictions = []
+    predictions = np.dot(testDF[other_ixps], rscModel.model.weights)
+    model_fit = np.dot(trainDF[other_ixps][:], rscModel.model.weights)
+    
+    plt.plot(after_january_dates, predictions, color = 'red', label = "counterfactual", linewidth = 1)
+    plt.plot(before_january_dates, model_fit, color = 'green', label = "fitted model", linewidth = 1)
+    axes.relim()
+    axes.autoscale()
+    axes.set_ylim(bottom=0)
+    plt.legend()
+    
 def plot_data(filename, ixp, scaled_y_vals, scaled_x, start_date_time, start_date, main_color):
     
     data_dict = {}
@@ -1512,7 +1551,7 @@ def plot_data(filename, ixp, scaled_y_vals, scaled_x, start_date_time, start_dat
                 file_string = 'year'
             scaled_x_vals = map_x_values_year(scaled_y_vals, scaled_x, start_date_time, False, ixp, dict_string)
         
-    plt.plot(scaled_x_vals[main_color]['raw dates'], scaled_x_vals[main_color]['y values'], linewidth = 1)
+    plt.plot(scaled_x_vals[main_color]['raw dates'], scaled_x_vals[main_color]['y values'], linewidth = 1, label = 'actual')
     plt.ylabel('Incoming traffic in ' + scaled_x_vals[main_color]['unit'] + 'bits per second')
     axes.set_ylim(bottom=0)
     axes.grid()
@@ -1522,7 +1561,10 @@ def plot_data(filename, ixp, scaled_y_vals, scaled_x, start_date_time, start_dat
     data_dict[ixp][str(start_date)][dict_string]['values'] = scaled_x_vals[main_color]['y values']
     data_dict[ixp][str(start_date)][dict_string]['dates'] = scaled_x_vals[main_color]['string dates']
     
-    get_standard = find_peak_ranges(scaled_x_vals[main_color]['raw dates'], data_dict[ixp][str(start_date)][dict_string]['values'])
+    get_standard = find_peak_ranges(scaled_x_vals[main_color]['raw dates'], data_dict[ixp][str(start_date)][dict_string]['values'], ixp)
+    
+    plt.axvline(x = datetime.datetime(2020, 1, 1), color = 'black')
+    '''
     test = get_standard[0]
     
     start_1, end_1 = test[len(test) - 1]
@@ -1546,14 +1588,17 @@ def plot_data(filename, ixp, scaled_y_vals, scaled_x, start_date_time, start_dat
         axes.text(0, -0.3, "Blue peak date range: " + data_dict[ixp][str(start_date)][dict_string]['dates'][start_3 - 1][0:10] + " to " + data_dict[ixp][str(start_date)][dict_string]['dates'][end_3 - 1][0:10], transform=axes.transAxes, fontsize=10, verticalalignment='top')
         
     axes.text(0, -0.5, "Maximum value of throughput is: " + str(get_standard[3]), transform=axes.transAxes, fontsize=10, verticalalignment='top')
-    plt.axvline(x = datetime.datetime(2020, 1, 1), color = 'black')
+    
     plt.axhline(y = get_standard[1], color = 'blue', zorder=-50)
     axes.text(0, -0.6, "Pre-January plot mean (blue line): " + str(get_standard[1]), transform=axes.transAxes, fontsize=10, verticalalignment='top')
     plt.axhline(y = get_standard[1] + get_standard[2], color = 'purple', zorder=-50)
     axes.text(0, -0.7, "Standard deviation (one per line above mean): " + str(get_standard[2]), transform=axes.transAxes, fontsize=10, verticalalignment='top')
     plt.axhline(y = get_standard[1] + get_standard[2]*2, color = 'green', zorder=-50)
     plt.axhline(y = get_standard[1] + get_standard[2]*3, color = 'red', zorder=-50)
+    
+    '''
     plt.title(ixp + title_string)
+    
     
     #plt.savefig(str(start_date) + ' ' + ixp + ' ' + file_string + ' peaks' + '.png', bbox_inches = 'tight')
     #plt.savefig(str(start_date) + ' ' + ixp + ' ' + file_string + ' peaks' + '.pdf', bbox_inches = 'tight')
@@ -1564,7 +1609,44 @@ def plot_data(filename, ixp, scaled_y_vals, scaled_x, start_date_time, start_dat
     #plt.cla()
     #plt.close()
     
-    return data_dict
+    return data_dict, get_standard[4], get_standard[5], get_standard[6], get_standard[7], get_standard[8], get_standard[9]
+
+def ixp_concat_synth_control(current_ixp, ixp_list):
+    pass
+    return
+
+def nan_fill(high_sampled_dates, low_sampled_dates, low_sampled_vals):
+
+    low_sampled_index = 0
+    fixed_array_index = 0
+    find_date_index = 0
+    crop_index = 0
+
+    fixed_array = np.empty(high_sampled_dates.shape)
+    fixed_array[:] = np.NaN
+    
+    if (high_sampled_dates[0].month > low_sampled_dates[0].month and high_sampled_dates[0].year == low_sampled_dates[0].year) or high_sampled_dates[0].year > low_sampled_dates[0].year:
+        
+        for date in low_sampled_dates:
+            if date.year == high_sampled_dates[low_sampled_index].year and date.month == high_sampled_dates[low_sampled_index].month and date.day == high_sampled_dates[low_sampled_index].day:
+                crop_index = find_date_index
+                break
+            find_date_index += 1
+            
+        low_sampled_modify = low_sampled_dates[crop_index:]
+        low_sampled_vals_modify = low_sampled_vals[crop_index:]
+            
+    else:
+        low_sampled_modify = np.copy(low_sampled_dates)
+        low_sampled_vals_modify = np.copy(low_sampled_vals)
+        
+    for date in high_sampled_dates:
+        if date.year == low_sampled_modify[low_sampled_index].year and date.month == low_sampled_modify[low_sampled_index].month and date.day == low_sampled_modify[low_sampled_index].day and fixed_array_index < low_sampled_modify.size:
+            fixed_array[fixed_array_index] = low_sampled_vals_modify[low_sampled_index]
+            low_sampled_index += 1
+        fixed_array_index += 1
+
+    return fixed_array, low_sampled_modify
 
 if __name__ == "__main__":
     
@@ -1572,7 +1654,22 @@ if __name__ == "__main__":
     start_year = 2020
     start_month = 8
     start_day = 1
-    ixp_list = ['EPIX.Warszawa-KIX', 'EPIX.Katowice']
+    ixp_list = ['JPNAP Osaka',
+                'LONAP',
+                'BCIX',
+                'MASS-IX',
+                'TorIX',
+                'IXPN Lagos',
+                'IX.br (PTT.br) Brasília',
+                'MIX-IT',
+                'DE-CIX Frankfurt',
+                'DE-CIX Munich', 
+                'DE-CIX Hamburg',
+                'DE-CIX Istanbul',
+                'DE-CIX Madrid',
+                'DE-CIX Marseille',
+                'DE-CIX New York', 
+                'DE-CIX Dallas']
     
     for date_file in directory:
 
@@ -1599,7 +1696,7 @@ if __name__ == "__main__":
             for filename in os.listdir(ixp_directory):
                 graph_type = ''
                     
-                if 'year' in filename and 'peers' not in filename and 'prefixes' not in filename:
+                if 'year' in filename and 'peers' not in filename and 'prefixes' not in filename and '2' not in filename and '5' not in filename:
                     
                     if 'day' in filename:
                         plot_type = 'day'
@@ -1637,8 +1734,8 @@ if __name__ == "__main__":
                     x_axis_chars = ident_chars(x_axis, scale_factor, 'x', filter_type)
                     y_axis_chars = ident_chars(y_axis, scale_factor, 'y', filter_type)
                     
-                    x_axis_chars[2].show()
-                    y_axis_chars[2].show()
+                    #x_axis_chars[2].show()
+                    #y_axis_chars[2].show()
                     
                     if '5year' in filename and 'DE-CIX New York' in test_ixp:
                         x_chars = process_chars(x_axis_chars[0], x_axis_chars[1], True, False)
@@ -1657,7 +1754,226 @@ if __name__ == "__main__":
                     
                     fig,axes = plt.subplots(figsize=(10,5))
                     
-                    all_dict = plot_data(filename, test_ixp, scaled_y_vals, scaled_x, start_date_time, start_date, main_color)   
+                    plot_info = plot_data(filename, test_ixp, scaled_y_vals, scaled_x, start_date_time, start_date, main_color)
+                    x_scale = plot_info[3]
+                    new_scaled_x = x_scale[:675]
+                    all_dict = plot_info[0]
+                    list_length = len(ixp_list)
+                    
+                    if 'DE-CIX New York' == ixp_list[list_length - 1]:
+                        before_crop = 487
+                        after_crop = 675
+                    elif 'DE-CIX Munich' == ixp_list[list_length - 1]:
+                        before_crop = 489
+                        after_crop = 675
+                    elif 'DE-CIX Dallas' == ixp_list[list_length - 1]:
+                        before_crop = 489
+                        after_crop = 675
+                    else:
+                        before_crop = 489
+                        after_crop = 675
+                    
+                    if 'Dallas' in test_ixp:
+                        df_dallas_before_jan = plot_info[1][:before_crop]
+                        df_dallas_after_jan = plot_info[2][:after_crop]
+                        dallas_before_dates = plot_info[4]
+                        dallas_after_dates = plot_info[3]
+                    elif 'Marseille' in test_ixp:
+                        df_marseille_before_jan = plot_info[1][:before_crop]
+                        df_marseille_after_jan = plot_info[2][:after_crop]
+                        marseille_before_dates = plot_info[4]
+                        marseille_after_dates = plot_info[3]
+                    elif 'Madrid' in test_ixp:
+                        df_madrid_before_jan = plot_info[1][:before_crop]
+                        df_madrid_after_jan = plot_info[2][:after_crop]
+                        madrid_before_dates = plot_info[4]
+                        madrid_after_dates = plot_info[3]
+                    elif 'Istanbul' in test_ixp:
+                        df_istanbul_before_jan = plot_info[1][:before_crop]
+                        df_istanbul_after_jan = plot_info[2][:after_crop]
+                        istanbul_before_dates = plot_info[4]
+                        istanbul_after_dates = plot_info[3]
+                    elif 'Hamburg' in test_ixp:
+                        df_hamburg_before_jan = plot_info[1][:before_crop]
+                        df_hamburg_after_jan = plot_info[2][:after_crop]
+                        hamburg_before_dates = plot_info[4]
+                        hamburg_after_dates = plot_info[3]
+                    elif 'New York' in test_ixp:
+                        df_new_york_before_jan = plot_info[1][:before_crop]
+                        df_new_york_after_jan = plot_info[2][:after_crop]
+                        new_york_before_dates = plot_info[4]
+                        new_york_after_dates = plot_info[3]
+                    elif 'Munich' in test_ixp:
+                        df_munich_before_jan = plot_info[1][:before_crop]
+                        df_munich_after_jan = plot_info[2][:after_crop]
+                        munich_before_dates = plot_info[4]
+                        munich_after_dates = plot_info[3]
+                    elif 'Osaka' in test_ixp:
+                        df_osaka_before_jan = plot_info[1][:before_crop]
+                        df_osaka_after_jan = plot_info[2][:after_crop]
+                        osaka_before_dates = plot_info[4]
+                        osaka_after_dates = plot_info[3]
+                        osaka_before_vals = plot_info[5]
+                        osaka_after_vals = plot_info[6]
+                    elif 'LONAP' in test_ixp:
+                        df_london_before_jan = plot_info[1][:before_crop]
+                        df_london_after_jan = plot_info[2][:after_crop]
+                        london_before_dates = plot_info[4]
+                        london_after_dates = plot_info[3]
+                        london_before_vals = plot_info[5]
+                        london_after_vals = plot_info[6]
+                    elif 'BCIX' in test_ixp:
+                        df_berlin_before_jan = plot_info[1][:before_crop]
+                        df_berlin_after_jan = plot_info[2][:after_crop]
+                        berlin_before_dates = plot_info[4]
+                        berlin_after_dates = plot_info[3]
+                        berlin_before_vals = plot_info[5]
+                        berlin_after_vals = plot_info[6]
+                    elif 'MASS-IX' in test_ixp:
+                        df_mass_before_jan = plot_info[1][:before_crop]
+                        df_mass_after_jan = plot_info[2][:after_crop]
+                        mass_before_dates = plot_info[4]
+                        mass_after_dates = plot_info[3]
+                        mass_before_vals = plot_info[5]
+                        mass_after_vals = plot_info[6]
+                    elif 'TorIX' in test_ixp:
+                        df_toronto_before_jan = plot_info[1][:before_crop]
+                        df_toronto_after_jan = plot_info[2][:after_crop]
+                        toronto_before_dates = plot_info[4]
+                        toronto_after_dates = plot_info[3]
+                        toronto_before_vals = plot_info[5]
+                        toronto_after_vals = plot_info[6]
+                    elif 'Lagos' in test_ixp:
+                        df_lagos_before_jan = plot_info[1][:before_crop]
+                        df_lagos_after_jan = plot_info[2][:after_crop]
+                        lagos_before_dates = plot_info[4]
+                        lagos_after_dates = plot_info[3]
+                        lagos_before_vals = plot_info[5]
+                        lagos_after_vals = plot_info[6]
+                    elif 'Brasília' in test_ixp:
+                        df_brasilia_before_jan = plot_info[1][:before_crop]
+                        df_brasilia_after_jan = plot_info[2][:after_crop]
+                        brasilia_before_dates = plot_info[4]
+                        brasilia_after_dates = plot_info[3]
+                        brasilia_before_vals = plot_info[5]
+                        brasilia_after_vals = plot_info[6]
+                    elif 'Frankfurt' in test_ixp:
+                        df_frankfurt_before_jan = plot_info[1][:before_crop] * 1000
+                        df_frankfurt_after_jan = plot_info[2][:after_crop] * 1000
+                        frankfurt_before_dates = plot_info[4]
+                        frankfurt_after_dates = plot_info[3]
+                        frankfurt_before_vals = plot_info[5]
+                        frankfurt_after_vals = plot_info[6]
+                    elif 'MIX-IT' in test_ixp:
+                        df_milan_before_jan = plot_info[1][:before_crop] * 1000
+                        df_milan_after_jan = plot_info[2][:after_crop] * 1000
+                        milan_before_dates = plot_info[4]
+                        milan_after_dates = plot_info[3]
+                        milan_before_vals = plot_info[5]
+                        milan_after_vals = plot_info[6]
+                    
+                    if 'DE-CIX Dallas' == ixp_list[list_length - 1] and 'Dallas' in test_ixp:
+                            
+                        debug = nan_fill(dallas_before_dates, osaka_before_dates, osaka_before_vals)
+                        debug_2 = nan_fill(dallas_after_dates, osaka_after_dates, osaka_after_vals)
+                        
+                        df_osaka_before_jan = pd.DataFrame({'JPNAP Osaka': debug[0][:before_crop]})
+                        df_osaka_after_jan = pd.DataFrame({'JPNAP Osaka': debug_2[0][:after_crop]})
+                        
+                        debug_3 = nan_fill(dallas_before_dates, london_before_dates, london_before_vals)
+                        debug_4 = nan_fill(dallas_after_dates, london_after_dates, london_after_vals)
+                        
+                        df_london_before_jan = pd.DataFrame({'LONAP': debug_3[0][:before_crop]})
+                        df_london_after_jan = pd.DataFrame({'LONAP': debug_4[0][:after_crop]})
+                        
+                        debug_5 = nan_fill(dallas_before_dates, berlin_before_dates, berlin_before_vals)
+                        debug_6 = nan_fill(dallas_after_dates, berlin_after_dates, berlin_after_vals)
+                        
+                        df_berlin_before_jan = pd.DataFrame({'BCIX': debug_5[0][:before_crop]})
+                        df_berlin_after_jan = pd.DataFrame({'BCIX': debug_6[0][:after_crop]})
+                        
+                        debug_7 = nan_fill(dallas_before_dates, berlin_before_dates, berlin_before_vals)
+                        debug_8 = nan_fill(dallas_after_dates, berlin_after_dates, berlin_after_vals)
+                        
+                        df_mass_before_jan = pd.DataFrame({'MASS-IX': debug_7[0][:before_crop]})
+                        df_mass_after_jan = pd.DataFrame({'MASS-IX': debug_8[0][:after_crop]})
+                        
+                        debug_9 = nan_fill(dallas_before_dates, toronto_before_dates, toronto_before_vals)
+                        debug_10 = nan_fill(dallas_after_dates, toronto_after_dates, toronto_after_vals)
+                        
+                        df_toronto_before_jan = pd.DataFrame({'TorIX': debug_9[0][:before_crop]})
+                        df_toronto_after_jan = pd.DataFrame({'TorIX': debug_10[0][:after_crop]})
+                        
+                        debug_11 = nan_fill(dallas_before_dates, lagos_before_dates, lagos_before_vals)
+                        debug_12 = nan_fill(dallas_after_dates, lagos_after_dates, lagos_after_vals)
+                        
+                        df_lagos_before_jan = pd.DataFrame({'IXPN Lagos': debug_11[0][:before_crop]})
+                        df_lagos_after_jan = pd.DataFrame({'IXPN Lagos': debug_12[0][:after_crop]})
+                        
+                        debug_13 = nan_fill(dallas_before_dates, brasilia_before_dates, brasilia_before_vals)
+                        debug_14 = nan_fill(dallas_after_dates, brasilia_after_dates, brasilia_after_vals)
+                        
+                        df_brasilia_before_jan = pd.DataFrame({'IX.br (PTT.br) Brasília': debug_13[0][:before_crop]})
+                        df_brasilia_after_jan = pd.DataFrame({'IX.br (PTT.br) Brasília': debug_14[0][:after_crop]})
+                        
+                        debug_15 = nan_fill(dallas_before_dates, milan_before_dates, milan_before_vals)
+                        debug_16 = nan_fill(dallas_after_dates, milan_after_dates, milan_after_vals)
+                        
+                        df_milan_before_jan = pd.DataFrame({'MIX-IT': debug_15[0][:before_crop]*1000})
+                        df_milan_after_jan = pd.DataFrame({'MIX-IT': debug_16[0][:after_crop]*1000})
+                        
+                        
+                        result_before_jan = pd.concat([df_dallas_before_jan, 
+                                                       df_munich_before_jan, 
+                                                       df_new_york_before_jan,
+                                                       df_istanbul_before_jan, 
+                                                       df_marseille_before_jan,
+                                                       df_madrid_before_jan,
+                                                       df_osaka_before_jan,
+                                                       df_london_before_jan,
+                                                       df_hamburg_before_jan,
+                                                       df_berlin_before_jan,
+                                                       df_mass_before_jan,
+                                                       df_toronto_before_jan,
+                                                       df_lagos_before_jan,
+                                                       df_brasilia_before_jan,
+                                                       df_frankfurt_before_jan,
+                                                       df_milan_before_jan],
+                                                       axis=1, sort=False)
+                        
+                        result_after_jan = pd.concat([df_dallas_after_jan, 
+                                                      df_munich_after_jan, 
+                                                      df_new_york_after_jan,
+                                                      df_istanbul_after_jan, 
+                                                      df_marseille_after_jan, 
+                                                      df_madrid_after_jan,
+                                                      df_osaka_after_jan,
+                                                      df_london_after_jan,
+                                                      df_hamburg_after_jan,
+                                                      df_berlin_after_jan,
+                                                      df_mass_after_jan,
+                                                      df_toronto_after_jan,
+                                                      df_lagos_after_jan,
+                                                      df_brasilia_after_jan,
+                                                      df_frankfurt_after_jan,
+                                                      df_milan_after_jan], 
+                                                      axis=1, sort=False)
+                        
+                        result_before_jan = result_before_jan.interpolate(method='linear')
+                        result_after_jan= result_after_jan.interpolate(method='linear')
+                        
+                        '''
+                        all_data_before_jan = pd.concat([pd.DataFrame({'Dates':dallas_before_dates}), result_before_jan], axis = 1, sort = False)
+                        all_data_after_jan = pd.concat([pd.DataFrame({'Dates':dallas_after_dates}), result_after_jan], axis = 1, sort = False)
+                        all_data = pd.concat([all_data_before_jan, all_data_after_jan], axis = 0, sort = False)
+                        '''
+                        
+                        selected_ixp = 'DE-CIX Dallas'
+                        ixp_list.remove(selected_ixp)
+                        ixp_list_synth = ixp_list
+                        
+                        synthetic_control(result_before_jan, result_after_jan, new_scaled_x, plot_info[4], selected_ixp, ixp_list_synth)
+                            
                     
         start_day += 1
         os.chdir(directory)
