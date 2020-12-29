@@ -1,5 +1,7 @@
 # image-processing - Scraping, image processing, and data analysis for IXP plots
 
+For Python 3.7+
+
 Dependencies:
 numpy, matplotlib, os, datetime, pandas, ruptures, collections, PIL, dateutil, pytesseract, tslib
 
