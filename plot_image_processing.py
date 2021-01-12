@@ -58,7 +58,7 @@ def get_top_colors(img):
     '''
     
     index = 0
-    color_count = 10
+    color_count = 3#10
     process_list = []
     color_list = []
     channels = list(img.getbands())
@@ -477,12 +477,20 @@ def crop_axes(folder_name, img, img_type):
         removable_key = True
         
         if 'DE-CIX Munich' in folder_name:
-            scale_factor = 4
+            scale_factor = 3
         elif 'DE-CIX New York' in folder_name:
             scale_factor = 10
+        elif 'DE-CIX Dallas' in folder_name:
+            scale_factor = 5
+        elif 'DE-CIX Marseille' in folder_name:
+            scale_factor = 3
         
         if 'UAE-IX' in folder_name:
             primary_color = (171, 171, 172)
+        elif 'Dusseldorf' in folder_name:
+            primary_color = (246, 217, 15)
+        elif 'Dallas' in folder_name and img_type == 'month':
+            primary_color = (229, 212, 91)
         else:
             primary_color = (246, 217, 15)
             
@@ -499,14 +507,14 @@ def crop_axes(folder_name, img, img_type):
         
         scale_factor = 5
         
-        plot_type = 2
+        plot_type = 3
         filter_type = 1
         removable_key = True
         
-        if img_type == '5year':
+        if img_type == '5year' or img_type == 'year':
             primary_color = (247, 218, 15)
         else:
-            primary_color = (247, 217, 15)
+            primary_color = (247, 217, 15)#(246, 218, 15)
             
     elif folder_name in group_3:
         left_x_axis = 62
@@ -609,6 +617,7 @@ def crop_axes(folder_name, img, img_type):
             'IX.br (PTT.br) Maringá',
             'IX.br (PTT.br) Rio de Janeiro',
             'IX.br (PTT.br) São Paulo'
+            
         ]
         
         color_3 = [
@@ -729,13 +738,13 @@ def crop_axes(folder_name, img, img_type):
         filter_type = 2
         removable_key = True
         
-        if 'Gothenburg' in folder_name or 'Sundsvall' in folder_name:
+        if 'Sundsvall' in folder_name or 'Gothenburg' in folder_name or 'Copenhagen' in folder_name:
             primary_color = (4, 251, 4)
         elif 'Lulea' in folder_name:
             if img_type == '2year':
                 primary_color = (4, 251, 4)
             else:
-                primary_color = (3, 252, 3)
+                primary_color = (2, 252, 2)
         else:
             primary_color = (3, 252, 3)
         
@@ -1082,12 +1091,33 @@ def scale_by_color(y_units_dict, start_loc, end_loc, time_factor, start_date):
 
             index += 1
             
-        x_y_dict[color] = {
-            'y values' : y_values_kept,
-            'unit' : y_units_dict[color]['unit'],
-            'raw dates' : date_list,
-            'string dates': str_date_list
-        }
+        if y_units_dict[color]['unit'] == 'T':
+            y_values_kept = [val * 1000 for val in y_values_kept]
+            
+            x_y_dict[color] = {
+                'y values' : y_values_kept,
+                'unit' : 'G',
+                'raw dates' : date_list,
+                'string dates': str_date_list
+            }
+            
+        elif y_units_dict[color]['unit'] == 'M':
+            y_values_kept = [val / 1000 for val in y_values_kept]
+            
+            x_y_dict[color] = {
+                'y values' : y_values_kept,
+                'unit' : 'G',
+                'raw dates' : date_list,
+                'string dates': str_date_list
+            }
+            
+        else:
+            x_y_dict[color] = {
+                'y values' : y_values_kept,
+                'unit' : y_units_dict[color]['unit'],
+                'raw dates' : date_list,
+                'string dates': str_date_list
+            }
             
     return x_y_dict
 
@@ -1278,9 +1308,44 @@ def map_x_values_month(y_units_dict, x_axis_dict, current_date, ixp_type):
         while end_time.day != int(key_list[key_amount - 1]):
             end_time -= datetime.timedelta(days = 1)
         
-        start_time = datetime.datetime(end_time.year, end_time.month - 1, int(key_list[1]), 12)
+        key_list_index = 0
+        
+        for entry in key_list:
+            try: 
+                int(entry)
+                break
+            except ValueError:
+                key_list_index += 1
+                
+        start_time = datetime.datetime(end_time.year, end_time.month - 1, int(key_list[key_list_index]), 12)
         start_location = (x_axis_dict[key_list[0]]['vertical midline'] + x_axis_dict[key_list[1]]['vertical midline']) // 2
         end_location = (x_axis_dict[key_list[key_amount - 2]]['vertical midline'] + x_axis_dict[key_list[key_amount - 1]]['vertical midline']) // 2
+        time_scale = (end_time - start_time).days * 24 * 60 * 60
+        
+    elif ixp_type == 3:
+        end_time = datetime.datetime.combine(current_date, datetime.time(12, 0))
+        
+        if 'on' in key_list[key_amount - 1]:
+            weekday = 1
+        elif 'ue' in key_list[key_amount - 1]:
+            weekday = 2
+        elif 'ed' in key_list[key_amount - 1]:
+            weekday = 3
+        elif 'hu' in key_list[key_amount - 1]:
+            weekday = 4
+        elif 'ri' in key_list[key_amount - 1]:
+            weekday = 5
+        elif 'at' in key_list[key_amount - 1]:
+            weekday = 6
+        elif 'un' in key_list[key_amount - 1]:
+            weekday = 7
+            
+        while weekday != end_time.isoweekday():
+            end_time -= datetime.timedelta(days = 1)
+
+        start_time = end_time - datetime.timedelta(days = 28)
+        start_location = x_axis_dict[key_list[0]]['vertical midline']
+        end_location = x_axis_dict[key_list[key_amount - 1]]['vertical midline']
         time_scale = (end_time - start_time).days * 24 * 60 * 60
         
     return scale_by_color(y_units_dict, start_location, end_location, time_scale, start_time)

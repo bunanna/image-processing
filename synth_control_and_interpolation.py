@@ -10,9 +10,7 @@ import matplotlib as mpl
 import datetime
 import pandas as pd
 import ruptures as rpt
-from tslib.src import tsUtils
 from tslib.src.synthcontrol.syntheticControl import RobustSyntheticControl
-from tslib.tests import testdata
 
 import plot_image_processing
 
@@ -34,7 +32,7 @@ def find_peak_ranges(processed_x_values, processed_y_values, ixp):
     
     print("Currently processing " + ixp)
     algo = rpt.Pelt(model='rbf').fit(throughput_numpy)
-    result = algo.predict(pen=5)
+    result = algo.predict(pen=1)
     breakpoint_amt = len(result)
     #rpt.display(throughput_numpy, result, figsize=(10, 6))
     
@@ -43,32 +41,20 @@ def find_peak_ranges(processed_x_values, processed_y_values, ixp):
     start_index = 0
     end_index = 0
     count = 0
-    january_index = 0
     breakpoint_avg_list = []
     avg_index_list = []
     
     for date in date_numpy:
-        if date.year == 2020 and date.month == 1:
-            january_index = count
+        if date.year == 2020 and date.month == 3:
+            interv_index = count
             break
         count += 1;
-    
-    before_stretch = 1
-    after_stretch = 1
         
-    before_january_old = throughput_numpy[0:january_index]
-    before_january_date = date_numpy[0:january_index]
-    before_january = np.repeat(before_january_old,before_stretch, axis=0)
+    before_interv = throughput_numpy[0:interv_index]
+    after_interv = throughput_numpy[interv_index:]
     
-    after_january_old = throughput_numpy[january_index:]
-    after_january_date = date_numpy[january_index:]
-    after_january = np.repeat(after_january_old,after_stretch, axis=0) 
-    
-    last_year_mean = np.mean(before_january)
-    last_year_std = np.std(before_january)
-    
-    df_before_january = pd.DataFrame({ixp: before_january})
-    df_after_january = pd.DataFrame({ixp: after_january})
+    last_year_mean = np.mean(before_interv)
+    last_year_std = np.std(before_interv)
     
     while end_index_in_result < breakpoint_amt:
         start_index = result[start_index_in_result]
@@ -88,12 +74,37 @@ def find_peak_ranges(processed_x_values, processed_y_values, ixp):
     
     avg, indices = [list(tuple) for tuple in tuples]
     
-    return indices[len(indices)-3:len(indices)], last_year_mean, last_year_std, maximum, df_before_january, df_after_january, after_january_date, before_january_date, before_january_old, after_january_old
+    return indices[len(indices)-3:len(indices)], last_year_mean, last_year_std, maximum
 
-def synthetic_control(before_january_data, after_january_data, after_january_dates, before_january_dates, selected_ixp, other_ixps):
+def divide_by_date(processed_x_values, processed_y_values, ixp):
+    date_numpy = np.array(processed_x_values)
+    throughput_numpy = np.array(processed_y_values)
+    count = 0
+    
+    for date in date_numpy:
+        if date.year == 2020 and date.month == 3:
+            interv_index = count
+            break
+        count += 1;
+    
+    before_interv_date = date_numpy[0:interv_index]
+    before_interv = throughput_numpy[0:interv_index]
+    
+    after_interv_date = date_numpy[interv_index:]
+    after_interv = throughput_numpy[interv_index:]
+    
+    df_before_interv = pd.DataFrame({ixp: before_interv})
+    df_after_interv = pd.DataFrame({ixp: after_interv})
+    
+    df_before_interv_dates = pd.DataFrame({ixp: before_interv_date})
+    df_after_interv_dates = pd.DataFrame({ixp: after_interv_date})
+    
+    return df_before_interv, df_after_interv, before_interv, after_interv, df_before_interv_dates, df_after_interv_dates, before_interv_date, after_interv_date
+
+def synthetic_control(before_interv_data, after_interv_data, after_interv_dates, before_interv_dates, selected_ixp, other_ixps):
     singvals = 4
-    trainDF = pd.DataFrame(data=before_january_data)
-    testDF = pd.DataFrame(data=after_january_data[other_ixps])
+    trainDF = pd.DataFrame(data=before_interv_data)
+    testDF = pd.DataFrame(data=after_interv_data[other_ixps])
     rscModel = RobustSyntheticControl(selected_ixp, singvals, len(trainDF), probObservation=1.0, modelType='svd', svdMethod='numpy', otherSeriesKeysArray=other_ixps)
     rscModel.fit(trainDF)
     denoisedDF = rscModel.model.denoisedDF()
@@ -102,10 +113,47 @@ def synthetic_control(before_january_data, after_january_data, after_january_dat
     predictions = []
     predictions = np.dot(testDF[other_ixps], rscModel.model.weights)
     model_fit = np.dot(trainDF[other_ixps][:], rscModel.model.weights)
+
+    plt.plot(after_interv_dates, predictions, color = 'red', label = "counterfactual", linewidth = 1)
+    plt.plot(before_interv_dates, model_fit, color = 'green', label = "fitted model", linewidth = 1)
     
-    plt.plot(after_january_dates, predictions, color = 'red', label = "counterfactual", linewidth = 1)
-    plt.plot(before_january_dates, model_fit, color = 'green', label = "fitted model", linewidth = 1)
+def nan_fill(compare_dates, base_dates, base_vals):
     
+    fixed_array = np.empty(compare_dates.shape)
+    fixed_array[:] = np.NaN
+    
+    base_val_index = 0
+    fixed_array_index = 0
+    find_date_index = 0
+    crop_index = 0
+    
+    if (compare_dates[0].month > base_dates[0].month and compare_dates[0].year == base_dates[0].year) or compare_dates[0].year > base_dates[0].year or (compare_dates[0].day > base_dates[0].day and compare_dates[0].month == base_dates[0].month and compare_dates[0].year == base_dates[0].year):
+        
+        for date in base_dates:
+            if date.year == compare_dates[0].year and date.month == compare_dates[0].month and date.day == compare_dates[0].day:
+                crop_index = find_date_index
+                break
+            find_date_index += 1
+            
+        base_dates_modify = base_dates[crop_index:]
+        base_vals_modify = base_vals[crop_index:]
+            
+    else:
+        base_dates_modify = np.copy(base_dates)
+        base_vals_modify = np.copy(base_vals)
+    
+    for base_date in base_dates_modify:
+        fixed_array_index = 0
+        for compare_date in compare_dates:
+            if compare_date.year == base_date.year and compare_date.month == base_date.month and compare_date.day == base_date.day:
+                if np.isnan(fixed_array[fixed_array_index]):
+                    fixed_array[fixed_array_index] = base_vals_modify[base_val_index]
+                    break
+            fixed_array_index += 1
+        base_val_index += 1
+            
+    return fixed_array, base_dates_modify, base_vals_modify
+
 def plot_data(filename, ixp, scaled_y_vals, scaled_x, start_date_time, start_date, main_color, ixp_type):
     
     data_dict = {}
@@ -129,50 +177,70 @@ def plot_data(filename, ixp, scaled_y_vals, scaled_x, start_date_time, start_dat
         dict_string = 'month'
         title_string = ' - Incoming traffic for last month'
         file_string = 'month'
-      
-    elif 'year' in filename:
-        mpl.rcParams.update({'font.size': 10})
-        if '5year' in filename and 'Frankfurt' in ixp:
-            dict_string = '5year'
-            title_string = ' - Incoming traffic for last 5 years'
-            file_string = '5years'
-            scaled_x_vals = plot_image_processing.map_x_values_year(scaled_y_vals, scaled_x, start_date_time, True, ixp, dict_string)
-        elif 'twoyear' in filename and 'Netnod' in ixp:
-            dict_string = '2year'
-            title_string = ' - Incoming traffic for last 2 years'
-            file_string = '2years'
-            scaled_x_vals = plot_image_processing.map_x_values_year(scaled_y_vals, scaled_x, start_date_time, False, ixp, dict_string)
-        else:
-            if '5year' in filename:
-                dict_string = '5year'
-                title_string = ' - Incoming traffic for last 5 years'
-                file_string = '5years'
-            elif 'twoyear' in filename:
-                dict_string = '2year'
-                title_string = ' - Incoming traffic for last 2 years'
-                file_string = '2years'
-            elif '2year' in filename:
-                dict_string = '2year'
-                title_string = ' - Incoming traffic for last 2 years'
-                file_string = '2years'
-            elif 'year' in filename:
-                dict_string = 'year'
-                title_string = ' - Incoming traffic for last year'
-                file_string = 'year'
-            scaled_x_vals = plot_image_processing.map_x_values_year(scaled_y_vals, scaled_x, start_date_time, False, ixp, dict_string)
-        
+
+    '''
     plt.plot(scaled_x_vals[main_color]['raw dates'], scaled_x_vals[main_color]['y values'], linewidth = 1, label = 'actual')
     plt.ylabel('Incoming traffic in ' + scaled_x_vals[main_color]['unit'] + 'bits per second')
-
-    data_dict[ixp][str(start_date)][dict_string] = {}
+    '''
+    
     data_dict[ixp][str(start_date)][dict_string] = {}
     data_dict[ixp][str(start_date)][dict_string]['values'] = scaled_x_vals[main_color]['y values']
     data_dict[ixp][str(start_date)][dict_string]['dates'] = scaled_x_vals[main_color]['string dates']
+    data_dict[ixp][str(start_date)][dict_string]['raw dates'] = scaled_x_vals[main_color]['raw dates']
     
-    get_standard = find_peak_ranges(scaled_x_vals[main_color]['raw dates'], data_dict[ixp][str(start_date)][dict_string]['values'], ixp)
-    
-    plt.axvline(x = datetime.datetime(2020, 1, 1), color = 'black')
+    return data_dict
 
+def plot_data_year(filename, ixp, scaled_y_vals, scaled_x, start_date_time, start_date, main_color):
+    
+    data_dict = {}
+    data_dict[ixp] = {}
+    data_dict[ixp][str(start_date)] = {}
+    
+    mpl.rcParams.update({'font.size': 10})
+    
+    if '5year' in filename and 'Frankfurt' in ixp:
+        dict_string = '5year'
+        title_string = ' - Incoming traffic for last 5 years'
+        file_string = '5years'
+        scaled_x_vals = plot_image_processing.map_x_values_year(scaled_y_vals, scaled_x, start_date_time, True, ixp, dict_string)
+    elif 'twoyear' in filename and 'Netnod' in ixp:
+        dict_string = '2year'
+        title_string = ' - Incoming traffic for last 2 years'
+        file_string = '2years'
+        scaled_x_vals = plot_image_processing.map_x_values_year(scaled_y_vals, scaled_x, start_date_time, False, ixp, dict_string)
+    else:
+        if '5year' in filename:
+            dict_string = '5year'
+            title_string = ' - Incoming traffic for last 5 years'
+            file_string = '5years'
+        elif 'twoyear' in filename:
+            dict_string = '2year'
+            title_string = ' - Incoming traffic for last 2 years'
+            file_string = '2years'
+        elif '2year' in filename:
+            dict_string = '2year'
+            title_string = ' - Incoming traffic for last 2 years'
+            file_string = '2years'
+        elif 'year' in filename:
+            dict_string = 'year'
+            title_string = ' - Incoming traffic for last year'
+            file_string = 'year'
+        scaled_x_vals = plot_image_processing.map_x_values_year(scaled_y_vals, scaled_x, start_date_time, False, ixp, dict_string)
+    
+    '''
+    plt.plot(scaled_x_vals[main_color]['raw dates'], scaled_x_vals[main_color]['y values'], linewidth = 1, label = 'actual')
+    plt.ylabel('Incoming traffic in ' + scaled_x_vals[main_color]['unit'] + 'bits per second')
+    '''
+    
+    data_dict[ixp][str(start_date)][dict_string] = {}
+    data_dict[ixp][str(start_date)][dict_string]['values'] = scaled_x_vals[main_color]['y values']
+    data_dict[ixp][str(start_date)][dict_string]['dates'] = scaled_x_vals[main_color]['string dates']
+    data_dict[ixp][str(start_date)][dict_string]['raw dates'] = scaled_x_vals[main_color]['raw dates']
+    
+    #plt.axvline(x = datetime.datetime(2020, 3, 1), color = 'black')
+    
+    #get_standard = find_peak_ranges(scaled_x_vals[main_color]['raw dates'], data_dict[ixp][str(start_date)][dict_string]['values'], ixp)
+    
     '''
     test = get_standard[0]
     
@@ -206,7 +274,7 @@ def plot_data(filename, ixp, scaled_y_vals, scaled_x, start_date_time, start_dat
     plt.axhline(y = get_standard[1] + get_standard[2]*3, color = 'red', zorder=-50)
     
     '''
-    plt.title(ixp + title_string)
+    #plt.title(ixp + title_string)
     
     
     #plt.savefig(str(start_date) + ' ' + ixp + ' ' + file_string + ' peaks' + '.png', bbox_inches = 'tight')
@@ -218,38 +286,133 @@ def plot_data(filename, ixp, scaled_y_vals, scaled_x, start_date_time, start_dat
     #plt.cla()
     #plt.close()
     
-    return data_dict, get_standard[4], get_standard[5], get_standard[6], get_standard[7], get_standard[8], get_standard[9]
+    return data_dict
 
-def nan_fill(high_sampled_dates, low_sampled_dates, low_sampled_vals):
-
-    low_sampled_index = 0
-    fixed_array_index = 0
-    find_date_index = 0
-    crop_index = 0
-
-    fixed_array = np.empty(high_sampled_dates.shape)
-    fixed_array[:] = np.NaN
+def process_dataframes(ixps, selected_ixp, stitched_dict, filter_amount):
+    ixp_count = 0
+    filter_control = filter_amount
+    new_ixps = ixps.copy()
+    test_list_before_interv = []
+    test_list_after_interv = []
     
-    if (high_sampled_dates[0].month > low_sampled_dates[0].month and high_sampled_dates[0].year == low_sampled_dates[0].year) or high_sampled_dates[0].year > low_sampled_dates[0].year:
+    for ixp in ixps:
+        types = list(stitched_dict[ixp].keys())
         
-        for date in low_sampled_dates:
-            if date.year == high_sampled_dates[low_sampled_index].year and date.month == high_sampled_dates[low_sampled_index].month and date.day == high_sampled_dates[low_sampled_index].day:
-                crop_index = find_date_index
-                break
-            find_date_index += 1
+        if 'year' in types:
+            all_dates = stitched_dict[ixp]['year']['dates']
+            all_vals = stitched_dict[ixp]['year']['values']
             
-        low_sampled_modify = low_sampled_dates[crop_index:]
-        low_sampled_vals_modify = low_sampled_vals[crop_index:]
+            get_dataframes = divide_by_date(all_dates, all_vals, ixp)
             
-    else:
-        low_sampled_modify = np.copy(low_sampled_dates)
-        low_sampled_vals_modify = np.copy(low_sampled_vals)
+            if ixp == selected_ixp and ixp_count == 0:
+                new_scaled_x = get_dataframes[7]
+            
+            if selected_ixp == ixp:
+                df_selected_before_interv = get_dataframes[0]
+                df_selected_after_interv = get_dataframes[1]
+                
+                selected_before_vals = get_dataframes[2]
+                selected_after_vals = get_dataframes[3]
+                
+                df_selected_before_dates = get_dataframes[4]
+                df_selected_after_dates = get_dataframes[5]
+                
+                selected_before_dates = get_dataframes[6]
+                selected_after_dates = get_dataframes[7]
+                
+            else:
+                df_new_before_interv = get_dataframes[0]
+                df_new_after_interv = get_dataframes[1]
+                
+                new_before_vals = get_dataframes[2]
+                new_after_vals = get_dataframes[3]
+                
+                df_new_before_dates = get_dataframes[4]
+                df_new_after_dates = get_dataframes[5]
+                
+                new_before_dates = get_dataframes[6]
+                new_after_dates = get_dataframes[7]
+                
+            if ixp_count > 0:
+                nan_filler_before = nan_fill(selected_before_dates, new_before_dates, new_before_vals)
+                nan_filler_after = nan_fill(selected_after_dates, new_after_dates, new_after_vals)
+                
+                df_new_before_interv = pd.DataFrame({ixp: nan_filler_before[0]})
+                df_new_after_interv = pd.DataFrame({ixp: nan_filler_after[0]})
+                
+                df_new_before_dates = pd.DataFrame({ixp: nan_filler_before[1]})
+                df_new_after_dates = pd.DataFrame({ixp: nan_filler_after[1]})
+                
+            if ixp_count == 0:
+                all_results_before_interv = df_selected_before_interv
+                all_results_after_interv = df_selected_after_interv
+                
+                all_dates_before_interv = df_selected_before_dates
+                all_dates_after_interv = df_selected_after_dates
+                
+                result_before_interv = df_selected_before_interv
+                result_after_interv = df_selected_after_interv
+                
+                result_dates_before_interv = df_selected_before_dates
+                result_dates_after_interv = df_selected_after_dates
+                
+            elif ixp != ixps[0]:
+                            
+                all_results_before_interv = pd.concat([all_results_before_interv, 
+                                                       df_new_before_interv],
+                                                       axis=1, sort=False)
+                    
+                all_results_after_interv = pd.concat([all_results_after_interv, 
+                                                      df_new_after_interv],
+                                                      axis=1, sort=False)
+                    
+                all_dates_before_interv = pd.concat([all_dates_before_interv, 
+                                                     df_new_before_dates],
+                                                     axis=1, sort=False)
+                
+                all_dates_after_interv = pd.concat([all_dates_after_interv, 
+                                                    df_new_after_dates],
+                                                    axis=1, sort=False)
+
+                test_list_before_interv.append((df_new_before_interv.isna().sum()[ixp] / len(df_new_before_interv)))
+                test_list_after_interv.append((df_new_after_interv.isna().sum()[ixp] / len(df_new_after_interv)))
+                
+                if (df_new_before_interv.isna().sum()[ixp] / len(df_new_before_interv)) >= filter_control or (df_new_after_interv.isna().sum()[ixp] / len(df_new_after_interv)) >= filter_control:
+                    new_ixps.remove(ixp)
+                else:
+                
+                    result_before_interv = pd.concat([result_before_interv, 
+                                                      df_new_before_interv],
+                                                      axis=1, sort=False)
+                    
+                    result_after_interv = pd.concat([result_after_interv, 
+                                                     df_new_after_interv],
+                                                     axis=1, sort=False)
+                    
+                    result_dates_before_interv = pd.concat([result_dates_before_interv, 
+                                                            df_new_before_dates],
+                                                            axis=1, sort=False)
+                
+                    result_dates_after_interv = pd.concat([result_dates_after_interv, 
+                                                           df_new_after_dates],
+                                                           axis=1, sort=False)
+                
+
+                
+        ixp_count += 1
+        
+    return result_before_interv, result_after_interv, new_scaled_x, selected_before_dates, result_dates_before_interv, result_dates_after_interv
+
+def apply_synthetic_control(ixps, selected_ixp, stitched_dict, filter_amount):
     
-    for date in high_sampled_dates:
-        if low_sampled_index < low_sampled_modify.size:
-            if date.year == low_sampled_modify[low_sampled_index].year and date.month == low_sampled_modify[low_sampled_index].month and date.day == low_sampled_modify[low_sampled_index].day:
-                fixed_array[fixed_array_index] = low_sampled_vals_modify[low_sampled_index]
-                low_sampled_index += 1
-        fixed_array_index += 1
+    data = process_dataframes(ixps, selected_ixp, stitched_dict, filter_amount)
+    
+    interpolate_before_interv = data[0].interpolate(method='linear')
+    interpolate_after_interv = data[1].interpolate(method='linear')
+
+    new_ixp_list = ixps.copy()
+    new_ixp_list.remove(selected_ixp)
+
+    synthetic_control(interpolate_before_interv, interpolate_after_interv, data[2], data[3], selected_ixp, new_ixp_list)
         
-    return fixed_array, low_sampled_modify
+    
