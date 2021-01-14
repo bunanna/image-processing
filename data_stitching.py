@@ -11,15 +11,67 @@ from PIL import Image
 import plot_image_processing
 import synth_control_and_interpolation
 
-def get_data():
+def get_data(selected_ixp):
     directory = os.getcwd()
     start_year = 2020
     start_month = 8
     start_day = 1
-    ixp_list = ['DE-CIX Munich', 
-                'IIX-Bali',
-                'DE-CIX Hamburg',
-                'DE-CIX Marseille']
+    
+    ixp = [selected_ixp]
+    
+    week_errors = ['ANIX - Albanian Neutral Internet eXchange',
+                   'TorIX',
+                   'MIX-IT',
+                   'IX.br (PTT.br) São Paulo',
+                   'IX.br (PTT.br) Brasília',
+                   'IX.br (PTT.br) Rio de Janeiro',
+                   'IX.br (PTT.br) Fortaleza',
+                   'IX.br (PTT.br) Porto Alegre',
+                   'IX.br (PTT.br) Brasília',
+                   'IX.br (PTT.br) Salvador',
+                   'IX.br (PTT.br) Belém',
+                   'IX.br (PTT.br) Campinas',
+                   'IX.br (PTT.br) Lajeado',
+                   'IX.br (PTT.br) Londrina',
+                   'IX.br (PTT.br) Recife',
+                   'IX.br (PTT.br) Belo Horizonte',
+                   'IX.br (PTT.br) Natal',
+                   'IX.br (PTT.br) Florianópolis',
+                   'IX.br (PTT.br) Maceió',
+                   'IX.br (PTT.br) Vitória',
+                   'IX.br (PTT.br) Maringá',
+                   'IX.br (PTT.br) Goiânia',
+                   'IX.br (PTT.br) Santa Maria',
+                   'IX.br (PTT.br) Foz do Iguaçu',
+                   'IX.br (PTT.br) São José do Rio Preto',
+                   'IX.br (PTT.br) Manaus',
+                   'IX.br (PTT.br) Cuiabá',
+                   'IX.br (PTT.br) Caxias do Sul']
+    
+    month_errors = ['EPIX.Katowice',]
+    
+    other_ixps = ['LONAP',
+                  'BCIX',
+                  'MASS-IX',
+                  'IXPN Lagos',
+                  'IIX-Bali',
+                  'IIX-Jogja',
+                  'DE-CIX Frankfurt',
+                  'DE-CIX Munich', 
+                  'DE-CIX Hamburg',
+                  'DE-CIX Istanbul',
+                  'DE-CIX Madrid',
+                  'DE-CIX Marseille',
+                  'DE-CIX New York', 
+                  'DE-CIX Dallas',
+                  'JPNAP Osaka',
+                  'JPNAP Tokyo',
+                  'EPIX.Warszawa-KIX',
+                  'GrenoblIX', 
+                  'SAIX',]
+    
+    other_ixps.remove(selected_ixp)
+    ixp_list = ixp + other_ixps
     
     current_date = datetime.date(start_year, start_month, start_day)
     current_date_time = datetime.datetime(start_year, start_month, start_day)
@@ -207,10 +259,3 @@ def stitched_data_to_dict(dict_data):
             }
                             
     return stitched_dict
-
-'''
-if __name__ == "__main__":
-    test = get_data()
-    test2 = stitched_data_to_dict(test)
-'''
-    

@@ -182,11 +182,25 @@ def plot_data(filename, ixp, scaled_y_vals, scaled_x, start_date_time, start_dat
     plt.plot(scaled_x_vals[main_color]['raw dates'], scaled_x_vals[main_color]['y values'], linewidth = 1, label = 'actual')
     plt.ylabel('Incoming traffic in ' + scaled_x_vals[main_color]['unit'] + 'bits per second')
     '''
+    print(scaled_x_vals.keys())
     
+    loop_amount = 0
+    
+    for color in list(scaled_x_vals.keys()):
+        if loop_amount == 0:
+            y_val_number = len(scaled_x_vals[color]['y values'])
+            probable_color = color
+        else:
+            if len(scaled_x_vals[color]['y values']) > y_val_number:
+                y_val_number = len(scaled_x_vals[color]['y values'])
+                probable_color = color
+        loop_amount += 1
+    
+    print(probable_color)
     data_dict[ixp][str(start_date)][dict_string] = {}
-    data_dict[ixp][str(start_date)][dict_string]['values'] = scaled_x_vals[main_color]['y values']
-    data_dict[ixp][str(start_date)][dict_string]['dates'] = scaled_x_vals[main_color]['string dates']
-    data_dict[ixp][str(start_date)][dict_string]['raw dates'] = scaled_x_vals[main_color]['raw dates']
+    data_dict[ixp][str(start_date)][dict_string]['values'] = scaled_x_vals[probable_color]['y values']
+    data_dict[ixp][str(start_date)][dict_string]['dates'] = scaled_x_vals[probable_color]['string dates']
+    data_dict[ixp][str(start_date)][dict_string]['raw dates'] = scaled_x_vals[probable_color]['raw dates']
     
     return data_dict
 
@@ -231,11 +245,25 @@ def plot_data_year(filename, ixp, scaled_y_vals, scaled_x, start_date_time, star
     plt.plot(scaled_x_vals[main_color]['raw dates'], scaled_x_vals[main_color]['y values'], linewidth = 1, label = 'actual')
     plt.ylabel('Incoming traffic in ' + scaled_x_vals[main_color]['unit'] + 'bits per second')
     '''
+    print(scaled_x_vals.keys())
+    
+    loop_amount = 0
+    
+    for color in list(scaled_x_vals.keys()):
+        if loop_amount == 0:
+            y_val_number = len(scaled_x_vals[color]['y values'])
+            probable_color = color
+        else:
+            if len(scaled_x_vals[color]['y values']) > y_val_number:
+                y_val_number = len(scaled_x_vals[color]['y values'])
+                probable_color = color
+        loop_amount += 1
+    print(probable_color)
     
     data_dict[ixp][str(start_date)][dict_string] = {}
-    data_dict[ixp][str(start_date)][dict_string]['values'] = scaled_x_vals[main_color]['y values']
-    data_dict[ixp][str(start_date)][dict_string]['dates'] = scaled_x_vals[main_color]['string dates']
-    data_dict[ixp][str(start_date)][dict_string]['raw dates'] = scaled_x_vals[main_color]['raw dates']
+    data_dict[ixp][str(start_date)][dict_string]['values'] = scaled_x_vals[probable_color]['y values']
+    data_dict[ixp][str(start_date)][dict_string]['dates'] = scaled_x_vals[probable_color]['string dates']
+    data_dict[ixp][str(start_date)][dict_string]['raw dates'] = scaled_x_vals[probable_color]['raw dates']
     
     #plt.axvline(x = datetime.datetime(2020, 3, 1), color = 'black')
     
@@ -287,13 +315,17 @@ def plot_data_year(filename, ixp, scaled_y_vals, scaled_x, start_date_time, star
     #plt.close()
     
     return data_dict
-
-def process_dataframes(ixps, selected_ixp, stitched_dict, filter_amount):
+      
+def process_dataframes(stitched_dict, selected_ixp):
     ixp_count = 0
-    filter_control = filter_amount
-    new_ixps = ixps.copy()
     test_list_before_interv = []
     test_list_after_interv = []
+    
+    ixps = list(stitched_dict.keys())
+    selected_ixp = 'DE-CIX Munich'
+    filter_control = 0.75
+    
+    new_ixps = ixps.copy()
     
     for ixp in ixps:
         types = list(stitched_dict[ixp].keys())
@@ -401,11 +433,13 @@ def process_dataframes(ixps, selected_ixp, stitched_dict, filter_amount):
                 
         ixp_count += 1
         
-    return result_before_interv, result_after_interv, new_scaled_x, selected_before_dates, result_dates_before_interv, result_dates_after_interv
+    return result_before_interv, result_after_interv, new_scaled_x, selected_before_dates, result_dates_before_interv, result_dates_after_interv, ixps, selected_ixp
 
-def apply_synthetic_control(ixps, selected_ixp, stitched_dict, filter_amount):
-    
-    data = process_dataframes(ixps, selected_ixp, stitched_dict, filter_amount)
+def apply_synthetic_control(stitched_dict, selected_ixp):
+
+    data = process_dataframes(stitched_dict, selected_ixp)
+    ixps = data[6]
+    selected_ixp = data[7]
     
     interpolate_before_interv = data[0].interpolate(method='linear')
     interpolate_after_interv = data[1].interpolate(method='linear')
@@ -414,5 +448,6 @@ def apply_synthetic_control(ixps, selected_ixp, stitched_dict, filter_amount):
     new_ixp_list.remove(selected_ixp)
 
     synthetic_control(interpolate_before_interv, interpolate_after_interv, data[2], data[3], selected_ixp, new_ixp_list)
-        
+    
+  
     

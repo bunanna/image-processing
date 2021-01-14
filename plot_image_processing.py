@@ -58,7 +58,7 @@ def get_top_colors(img):
     '''
     
     index = 0
-    color_count = 3#10
+    color_count = 5#10
     process_list = []
     color_list = []
     channels = list(img.getbands())
@@ -479,11 +479,15 @@ def crop_axes(folder_name, img, img_type):
         if 'DE-CIX Munich' in folder_name:
             scale_factor = 3
         elif 'DE-CIX New York' in folder_name:
-            scale_factor = 10
+            scale_factor = 6
         elif 'DE-CIX Dallas' in folder_name:
-            scale_factor = 5
+            scale_factor = 3 
         elif 'DE-CIX Marseille' in folder_name:
             scale_factor = 3
+        elif 'DE-CIX Istanbul' in folder_name:
+            scale_factor = 5
+        elif 'DE-CIX Madrid' in folder_name:
+            scale_factor = 5
         
         if 'UAE-IX' in folder_name:
             primary_color = (171, 171, 172)
@@ -512,7 +516,7 @@ def crop_axes(folder_name, img, img_type):
         removable_key = True
         
         if img_type == '5year' or img_type == 'year':
-            primary_color = (247, 218, 15)
+            primary_color = (247, 217, 15)
         else:
             primary_color = (247, 217, 15)#(246, 218, 15)
             
