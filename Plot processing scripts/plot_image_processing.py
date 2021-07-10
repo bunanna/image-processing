@@ -473,7 +473,7 @@ def crop_axes(folder_name, img, img_type):
         
         left_y_axis = 10
         top_y_axis = 0
-        right_y_axis = 46
+        right_y_axis = 45
         bottom_y_axis = 451
         
         scale_factor = 6
@@ -1213,6 +1213,7 @@ def scale_by_color(y_units_dict, start_loc, end_loc, time_factor, start_date):
             
     return x_y_dict
 
+'''
 def get_timezone(ixp):
     
     time_shift = 0
@@ -1294,6 +1295,7 @@ def get_timezone(ixp):
         time_shift = -3
         
     return time_shift
+'''
     
 def map_x_values_day(y_units_dict, x_axis_dict, current_date, ixp):
     '''
@@ -1327,7 +1329,7 @@ def map_x_values_day(y_units_dict, x_axis_dict, current_date, ixp):
     index = 0
     hour = 0
     
-    current_date -= datetime.timedelta(hours = get_timezone(ixp))
+    #current_date -= datetime.timedelta(hours = get_timezone(ixp))
 
     for key in x_axis_dict:
         if ':' in key:
@@ -1401,7 +1403,6 @@ def map_x_values_week(y_units_dict, x_axis_dict, current_date, ixp):
                 end_day -= datetime.timedelta(days = 1)
         
         end_time = datetime.datetime.combine(end_day, datetime.time(12, 0))
-        end_time -= datetime.timedelta(hours = get_timezone(ixp))
         
         start_time = end_time - datetime.timedelta(days = 7)
         
@@ -1420,11 +1421,9 @@ def map_x_values_week(y_units_dict, x_axis_dict, current_date, ixp):
     elif 'EPIX' in ixp:
         start_string = key_list[0]
         start_time = datetime.datetime.strptime(start_string, '%Y-%m-%d')
-        start_time -= datetime.timedelta(hours = get_timezone(ixp))
         
         end_string = key_list[key_amount - 1]
         end_time = datetime.datetime.strptime(end_string, '%Y-%m-%d')
-        end_time -= datetime.timedelta(hours = get_timezone(ixp))
         
         start_location = x_axis_dict[key_list[0]]['vertical midline']
         end_location = x_axis_dict[key_list[key_amount - 1]]['vertical midline']
@@ -1455,7 +1454,6 @@ def map_x_values_week(y_units_dict, x_axis_dict, current_date, ixp):
             end_time = datetime.datetime.combine(current_date, datetime.time(12, 0)) - datetime.timedelta(days = weekday - current_date.isoweekday())
         
         end_time += datetime.timedelta(days = 1)
-        end_time -= datetime.timedelta(hours = get_timezone(ixp))
         start_time = end_time - datetime.timedelta(days = key_amount)
         
         start_location = x_axis_dict[key_list[0]]['vertical midline']
@@ -1493,11 +1491,9 @@ def map_x_values_month(y_units_dict, x_axis_dict, current_date, ixp_type, ixp):
     if 'EPIX' in ixp:
         start_string = key_list[0]
         start_time = datetime.datetime.strptime(start_string, '%Y-%m-%d')
-        start_time -= datetime.timedelta(hours = get_timezone(ixp))
         
         end_string = key_list[key_amount - 1]
         end_time = datetime.datetime.strptime(end_string, '%Y-%m-%d')
-        end_time -= datetime.timedelta(hours = get_timezone(ixp))
         
         start_location = x_axis_dict[key_list[0]]['vertical midline']
         end_location = x_axis_dict[key_list[key_amount - 1]]['vertical midline']
@@ -1535,9 +1531,6 @@ def map_x_values_month(y_units_dict, x_axis_dict, current_date, ixp_type, ixp):
         start_week_number_label = ''.join(start_week_number_string_list)
         start_time = end_time - datetime.timedelta(weeks = end_time.isocalendar()[1] - int(start_week_number_label))
         
-        start_time -= datetime.timedelta(hours = get_timezone(ixp))
-        end_time -= datetime.timedelta(hours = get_timezone(ixp))
-        
         start_location = x_axis_dict[key_list[first_tag]]['vertical midline']
         end_location = x_axis_dict[key_list[key_amount - 1]]['vertical midline']
         
@@ -1559,9 +1552,6 @@ def map_x_values_month(y_units_dict, x_axis_dict, current_date, ixp_type, ixp):
                 key_list_index += 1
                 
         start_time = datetime.datetime(end_time.year, end_time.month - 1, int(key_list[key_list_index]), 12)
-        
-        start_time -= datetime.timedelta(hours = get_timezone(ixp))
-        end_time -= datetime.timedelta(hours = get_timezone(ixp))
         
         start_location = (x_axis_dict[key_list[0]]['vertical midline'] + x_axis_dict[key_list[1]]['vertical midline']) // 2
         end_location = (x_axis_dict[key_list[key_amount - 2]]['vertical midline'] + x_axis_dict[key_list[key_amount - 1]]['vertical midline']) // 2
@@ -1590,9 +1580,6 @@ def map_x_values_month(y_units_dict, x_axis_dict, current_date, ixp_type, ixp):
             end_time -= datetime.timedelta(days = 1)
 
         start_time = end_time - datetime.timedelta(days = 28)
-        
-        start_time -= datetime.timedelta(hours = get_timezone(ixp))
-        end_time -= datetime.timedelta(hours = get_timezone(ixp))
         
         start_location = x_axis_dict[key_list[0]]['vertical midline']
         end_location = x_axis_dict[key_list[key_amount - 1]]['vertical midline']
@@ -1630,7 +1617,6 @@ def map_x_values_year(y_units_dict, x_axis_dict, current_date, multi_year, ixp, 
         
         end_time = datetime.datetime(last_year, 1, 1, 0, 0)
         start_time = datetime.datetime(first_year, 1, 1, 0, 0)
-        start_time -= datetime.timedelta(hours = get_timezone(ixp))
         
         start_location = x_axis_dict[key_list[0]]['vertical midline']
         end_location = x_axis_dict[key_list[key_amount - 1]]['vertical midline']
@@ -1668,8 +1654,6 @@ def map_x_values_year(y_units_dict, x_axis_dict, current_date, multi_year, ixp, 
             
         start_time = end_time - relativedelta(months = key_amount - 1)
         
-        end_time -= datetime.timedelta(hours = get_timezone(ixp))
-        start_time -= datetime.timedelta(hours = get_timezone(ixp))
         
         start_location = x_axis_dict[key_list[0]]['vertical midline']
         end_location = x_axis_dict[key_list[key_amount - 2]]['vertical midline']
@@ -1709,14 +1693,12 @@ def map_x_values_year(y_units_dict, x_axis_dict, current_date, multi_year, ixp, 
         else:
             end_time = datetime.datetime(current_date.year, month_num, 15, 0, 0)
             
-        end_time -= datetime.timedelta(hours = get_timezone(ixp))
 
         if 'Netnod' in ixp and plot_type == '2year':
             start_time = end_time - relativedelta(months = 21)
         else:
             start_time = end_time - relativedelta(months = key_amount - 2)
             
-        start_time -= datetime.timedelta(hours = get_timezone(ixp))
 
         start_location = x_axis_dict[key_list[0]]['vertical midline']
         end_location = x_axis_dict[key_list[key_amount - 2]]['vertical midline']
@@ -1729,8 +1711,8 @@ if __name__ == "__main__":
     
     directory = os.getcwd()
     start_year = 2020
-    start_month = 8
-    start_day = 11
+    start_month = 9
+    start_day = 29
     
     example_ixps = ['DE-CIX Munich']
     
@@ -1758,7 +1740,8 @@ if __name__ == "__main__":
             for filename in os.listdir(ixp_directory):
                 plot_type = ''
                     
-                if ('month' in filename and 'peers' not in filename) and 'prefixes' not in filename and '2' not in filename and '5' not in filename and 'two' not in filename:
+                if '1year' in filename:
+                #if ('month' in filename and 'peers' not in filename) and 'prefixes' not in filename and '2' not in filename and '5' not in filename and 'two' not in filename:
                 #if ('year' in filename or 'month' in filename or 'week' in filename and 'peers' not in filename) and 'prefixes' not in filename and '2' not in filename and '5' not in filename and 'two' not in filename:
                     
                     if 'day' in filename:
@@ -1820,15 +1803,4 @@ if __name__ == "__main__":
 
         os.chdir(directory)
         
-        current_date += datetime.timedelta(days = 1)
-        current_date_time += datetime.timedelta(days = 1)
-    
-        if (current_date.month == 8 and current_date.day == 12) or (current_date.month == 8 and current_date.day == 28):
-            if current_date.day == start_day + 1:
-                break
-            else:
-                current_date += datetime.timedelta(days = 1)
-                current_date_time += datetime.timedelta(days = 1)
-            
-        elif current_date.day == start_day + 1:
-            break
+        break

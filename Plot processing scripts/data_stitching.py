@@ -7,48 +7,39 @@ Created on Sat Jan  9 19:15:23 2021
 import datetime
 import os
 from PIL import Image
+import traceback
 
 import plot_image_processing
 import synth_control_and_interpolation
 
-def get_data(selected_ixp, start_year, start_month, start_day, all_ixps, end_day, end_month, end_year):
+def get_data_no_loop(selected_ixp, start_year, start_month, start_day):
     directory = os.getcwd()
-    ixp = [selected_ixp]
 
-    other_ixps = all_ixps.copy()
-    other_ixps.remove(selected_ixp)
-    ixp_list = ixp + other_ixps
-    
     current_date = datetime.date(start_year, start_month, start_day)
     current_date_time = datetime.datetime(start_year, start_month, start_day)
     
     all_dict = {}
-
-    for date_file in directory:
-
-        if not os.path.isdir(str(current_date) + ' ' + 'Generated Images'):
-            os.makedirs(str(current_date ) + ' ' + 'Generated Images')
-        
-        os.chdir(str(current_date) + ' ' + 'Generated Images')
+    
+    if current_date <= datetime.date(2020, 9, 23):
         date_directory = os.path.join(directory, str(current_date))
-        all_dict[str(current_date)] = {}
+    elif current_date <= datetime.date(2020, 10, 18):
+        date_directory = directory
+    else:
+        date_directory = os.path.join(directory, str(current_date))
         
-        for ixp in ixp_list:
-            all_dict[str(current_date)][ixp] = {}
-            
-        for test_ixp in ixp_list:
-            
-            os.chdir(os.path.join(directory, str(current_date) + ' ' + 'Generated Images'))
-            
-            if not os.path.isdir(test_ixp):
-                os.makedirs(test_ixp)
-            os.chdir(test_ixp)
-            
-            ixp_directory = os.path.join(date_directory, str(current_date) + ' ' + test_ixp)
-                
-            for filename in os.listdir(ixp_directory):
+    all_dict[str(current_date)] = {}
+    all_dict[str(current_date)][selected_ixp] = {}
+    
+    ixp_directory = os.path.join(date_directory, str(current_date) + ' ' + selected_ixp)
+    
+    if os.path.isdir(ixp_directory) == True:
+        
+        for filename in os.listdir(ixp_directory):
+        
+            try:
                 plot_type = ''
-                    
+                  
+                #if '1year' in filename:
                 if ('year' in filename or 'month' in filename or 'week' in filename and 'peers' not in filename) and 'prefixes' not in filename and '2' not in filename and '5' not in filename and 'two' not in filename:
                     
                     if 'day' in filename:
@@ -66,12 +57,12 @@ def get_data(selected_ixp, start_year, start_month, start_day, all_ixps, end_day
                     elif 'year' in filename:
                         plot_type = 'year'
                         
-                    display_string = 'Now processing {} plot for {} on {}.'.format(plot_type, test_ixp, str(current_date))
+                    display_string = 'Now processing {} plot for {} on {}.'.format(plot_type, selected_ixp, str(current_date))
                     print(display_string)
                     
                     current_img = Image.open(os.path.join(ixp_directory, filename))
-    
-                    axes = plot_image_processing.crop_axes(test_ixp, current_img, plot_type)
+        
+                    axes = plot_image_processing.crop_axes(selected_ixp, current_img, plot_type)
                     main_color = axes[5]
                     removable_key = axes[6]
                     ixp_type = axes[7]
@@ -90,7 +81,7 @@ def get_data(selected_ixp, start_year, start_month, start_day, all_ixps, end_day
                     x_axis_chars = plot_image_processing.ident_chars(x_axis, scale_factor, 'x', filter_type)
                     y_axis_chars = plot_image_processing.ident_chars(y_axis, scale_factor, 'y', filter_type)
                     
-                    if '5year' in filename and 'DE-CIX New York' in test_ixp:
+                    if '5year' in filename and 'DE-CIX New York' in selected_ixp:
                         x_chars = plot_image_processing.process_chars(x_axis_chars[0], x_axis_chars[1], True, False)
                         y_chars = plot_image_processing.process_chars(y_axis_chars[0], y_axis_chars[1], True, True)
                     else:
@@ -101,43 +92,38 @@ def get_data(selected_ixp, start_year, start_month, start_day, all_ixps, end_day
             
                     scaled_x = plot_image_processing.map_boxes(x_chars, scale_factor, x_axis_chars[3], left_x_axis, top_x_axis, 'x')
                     scaled_y = plot_image_processing.map_boxes(y_chars, scale_factor, y_axis_chars[3], left_y_axis, top_y_axis, 'y')
-    
+        
                     colors = plot_image_processing.process_heights(current_img, removable_key)
                     scaled_y_vals = plot_image_processing.map_y_values(colors, scaled_y)
-
+        
                     if plot_type == 'year':
-                        plot_info = synth_control_and_interpolation.plot_data_year(filename, test_ixp, scaled_y_vals, scaled_x, current_date_time, current_date, main_color)
-    
-                        all_dict[str(current_date)][test_ixp][plot_type] = {
-                            'dates': plot_info[test_ixp][str(current_date)][plot_type]['raw dates'],
-                            'values': plot_info[test_ixp][str(current_date)][plot_type]['values']
+                        plot_info = synth_control_and_interpolation.plot_data_year(filename, selected_ixp, scaled_y_vals, scaled_x, current_date_time, current_date, main_color)
+        
+                        all_dict[str(current_date)][selected_ixp][plot_type] = {
+                            'dates': plot_info[selected_ixp][str(current_date)][plot_type]['raw dates'],
+                            'values': plot_info[selected_ixp][str(current_date)][plot_type]['values']
                         }
                         
                     else:
-                        plot_info = synth_control_and_interpolation.plot_data(filename, test_ixp, scaled_y_vals, scaled_x, current_date_time, current_date, main_color, ixp_type)
-    
-                        all_dict[str(current_date)][test_ixp][plot_type] = {
-                            'dates': plot_info[test_ixp][str(current_date)][plot_type]['raw dates'],
-                            'values': plot_info[test_ixp][str(current_date)][plot_type]['values']
+                        plot_info = synth_control_and_interpolation.plot_data(filename, selected_ixp, scaled_y_vals, scaled_x, current_date_time, current_date, main_color, ixp_type)
+        
+                        all_dict[str(current_date)][selected_ixp][plot_type] = {
+                            'dates': plot_info[selected_ixp][str(current_date)][plot_type]['raw dates'],
+                            'values': plot_info[selected_ixp][str(current_date)][plot_type]['values']
                         }
                         
-        os.chdir(directory)
-        
-        current_date += datetime.timedelta(days = 1)
-        current_date_time += datetime.timedelta(days = 1)
+            except:
+                print('An exception occured when processing the {} plot of {} on {}. Try checking the characters on the x and y axes.'.format(plot_type, selected_ixp, str(current_date)))
+                traceback.print_exc()
+                continue
+                
+    else:
+        print('The selected IXP was not found.')
+                    
+    os.chdir(directory)
     
-        if (current_date.month == 8 and current_date.day == 12) or (current_date.month == 8 and current_date.day == 28):
-            if current_date.day == end_day:
-                break
-            else:
-                current_date += datetime.timedelta(days = 1)
-                current_date_time += datetime.timedelta(days = 1)
-            
-        elif current_date.day == end_day:
-            break
-        
     return all_dict
-
+    
 def plot_data_stitching(date_list, plot_type, dict_data, ixp):
     
     base_list_dates = dict_data[date_list[0]][ixp][plot_type]['dates']
@@ -209,64 +195,21 @@ def stitched_data_to_dict(dict_data):
 
 if __name__ == "__main__":
     
-    selected_ixp = 'DE-CIX Munich'
-    
     start_year = 2020
     start_month = 8
     start_day = 6
     
     end_year = 2020
     end_month = 8
-    end_day = 7
+    end_day = 8
     
-    all_ixps = ['EPIX.Katowice',
-                'EPIX.Warszawa-KIX',
-                'ANIX - Albanian Neutral Internet eXchange',
-                'TorIX',
-                'MIX-IT',
-                'IX.br (PTT.br) São Paulo',
-                'IX.br (PTT.br) Rio de Janeiro',
-                'IX.br (PTT.br) Fortaleza',
-                'IX.br (PTT.br) Porto Alegre',
-                'IX.br (PTT.br) Brasília',
-                'IX.br (PTT.br) Salvador',
-                'IX.br (PTT.br) Belém',
-                'IX.br (PTT.br) Campinas',
-                'IX.br (PTT.br) Londrina',
-                'IX.br (PTT.br) Recife',
-                'IX.br (PTT.br) Belo Horizonte',
-                'IX.br (PTT.br) Natal',
-                'IX.br (PTT.br) Florianópolis',
-                'IX.br (PTT.br) Maceió',
-                'IX.br (PTT.br) Vitória',
-                'IX.br (PTT.br) Maringá',
-                'IX.br (PTT.br) Goiânia',
-                'IX.br (PTT.br) Santa Maria',
-                'IX.br (PTT.br) Foz do Iguaçu',
-                'IX.br (PTT.br) São José do Rio Preto',
-                'IX.br (PTT.br) Manaus',
-                'IX.br (PTT.br) Cuiabá',
-                'IX.br (PTT.br) Caxias do Sul',
-                'LONAP',
-                'BCIX',
-                'MASS-IX',
-                'IXPN Lagos',
-                'IIX-Bali',
-                'DE-CIX Frankfurt',
-                'DE-CIX Munich', 
-                'DE-CIX Hamburg',
-                'DE-CIX Istanbul',
-                'DE-CIX Madrid',
-                'DE-CIX Marseille',
-                'DE-CIX New York', 
-                'DE-CIX Dallas',
-                'JPNAP Osaka',
-                'JPNAP Tokyo',
-                'GrenoblIX', 
-                'SAIX',]
+    start_date = datetime.date(start_year, start_month, start_day)
+    current_date = datetime.date(start_year, start_month, start_day)
+    end_date = datetime.date(end_year, end_month, end_day)
     
-    all_ixps = ['IX.br (PTT.br) Rio de Janeiro',
-                'DE-CIX Munich']
+    ixp_example = 'DE-CIX Munich'
     
-    data = get_data(selected_ixp, start_year, start_month, start_day, all_ixps, end_day, end_month, end_year)
-    stitched_dict = stitched_data_to_dict(data)
+    while current_date < end_date:
+        data = get_data_no_loop(ixp_example, start_year, start_month, start_day)
+        stitched_dict = stitched_data_to_dict(data)
+        current_date += datetime.timedelta(days = 1)
